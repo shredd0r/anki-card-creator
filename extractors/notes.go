@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"sync"
 
 	"github.com/playwright-community/playwright-go"
 	"github.com/shredd0r/anki-card-creator/config"
+	"github.com/shredd0r/anki-card-creator/downloader"
 	"github.com/shredd0r/anki-card-creator/models"
 )
 
@@ -25,17 +27,19 @@ const (
 )
 
 type notesCardExtractor struct {
-	lengthCache *int
-	cfg         config.NotesConfig
-	logger      *slog.Logger
-	browser     playwright.Browser
+	lengthCache    *int
+	cfg            config.NotesConfig
+	logger         *slog.Logger
+	browser        playwright.Browser
+	fileDownloader downloader.FileDownloader
 }
 
-func NewNotesCardExtractor(logger *slog.Logger, cfg *config.Config, browser playwright.Browser) CardExtractor[models.NotesCard] {
+func NewNotesCardExtractor(logger *slog.Logger, cfg *config.Config, browser playwright.Browser, fileDownloader downloader.FileDownloader) CardExtractor[models.NotesCard] {
 	return &notesCardExtractor{
-		logger:  logger.With(slog.Any("struct", "notes-card-extractor")),
-		cfg:     cfg.NotesConfig,
-		browser: browser,
+		logger:         logger.With(slog.Any("struct", "notes-card-extractor")),
+		cfg:            cfg.NotesConfig,
+		browser:        browser,
+		fileDownloader: fileDownloader,
 	}
 }
 
@@ -329,30 +333,39 @@ func (e *notesCardExtractor) getCard(ctx context.Context, lessonLabel string, ca
 		}
 	default:
 		{
-			subjectLocator := cardLocator.Locator(selector_for_subject)
-			subject, err := subjectLocator.InnerText()
+			var err error
+			var pronouns io.Reader
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pronouns, err = e.getPronounce(ctx, cardLocator)
+			}()
+			wg.Wait()
 			if err != nil {
-				e.logger.Error("failed get subject from cardLocator", slog.Any("err", err.Error()))
 				return nil, err
 			}
-			explainLocator := cardLocator.Locator(selector_for_explain)
-			explain, err := explainLocator.InnerText()
+
+			subject, err := e.getInnerTextFromChild(cardLocator, selector_for_subject)
 			if err != nil {
-				e.logger.Error("failed get inner text from locator", slog.Any("err", err.Error()))
 				return nil, err
 			}
-			subjectType := e.getSubjectType(subject)
+			explain, err := e.getInnerTextFromChild(cardLocator, selector_for_explain)
+			if err != nil {
+				return nil, err
+			}
+			subjectType := e.getSubjectType(*subject)
 
 			card := &models.NotesCard{
-				Subject:     subject,
+				Subject:     *subject,
 				SubjectType: subjectType,
 				LessonName:  lessonLabel,
-				Explain:     explain,
+				Pronouns:    pronouns,
+				Explain:     *explain,
 			}
 			return card, nil
 		}
 	}
-
 }
 
 // getCardAndPutToChan is method for putting note card received method 'getCard' to data channel
@@ -419,4 +432,30 @@ func (e *notesCardExtractor) getSubjectType(subject string) models.SubjectType {
 		return models.SubjectTypePhrase
 	}
 	return models.SubjectTypeWord
+}
+
+func (e *notesCardExtractor) getInnerTextFromChild(parentLocator playwright.Locator, selector string) (*string, error) {
+	childLocator := parentLocator.Locator(selector_for_explain)
+	innerText, err := childLocator.InnerText()
+	if err != nil {
+		e.logger.Error("failed get inner text from locator", slog.Any("err", err.Error()))
+		return nil, err
+	}
+	return &innerText, nil
+}
+
+func (e *notesCardExtractor) getPronounce(ctx context.Context, cardLocator playwright.Locator) (io.Reader, error) {
+	pronounceFileLocator := cardLocator.Locator(selector_for_pronounce)
+	pronounceFileUrl, err := pronounceFileLocator.GetAttribute("src")
+	if err != nil {
+		e.logger.Error("failed get pronounce file url", slog.Any("err", err.Error()))
+		return nil, err
+	}
+
+	pronounce, err := e.fileDownloader.Download(ctx, pronounceFileUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	return pronounce, nil
 }

@@ -23,8 +23,8 @@ type FlashCard struct {
 	SubjectType   SubjectType
 	DeckName      string
 	EnglishLevel  EnglishLevel
-	Pronouns      *io.Reader // Can be nil if subject is phrase
-	Transcription *string    //
+	Pronouns      io.Reader // Can be nil if subject is phrase
+	Transcription *string   //
 	Explain       string
 	Picture       io.Reader
 	Examples      []string
@@ -34,7 +34,7 @@ type NotesCard struct {
 	Subject     string
 	SubjectType SubjectType
 	LessonName  string
-	Pronouns    *io.Reader // Can be nil, if subject is phrase
+	Pronouns    io.Reader // Can be nil, if subject is phrase
 	Explain     string
 }
 
