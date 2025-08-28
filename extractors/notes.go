@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"sync"
 
 	"github.com/playwright-community/playwright-go"
@@ -18,12 +17,12 @@ import (
 var errIndexOutOfRange = errors.New("index out of range")
 
 const (
-	mainNotesPage                = "https://smarte.greenforest.ua/book/6b83b23209033d606be62c9d237d2b1f01bd82fc/4a814ae3f003aede2422dabd06a31fe8175f30be"
-	selector_for_navigation_item = "div[class*=item-list]"
-	selector_for_flash_card      = "div.flashcard"
-	selector_for_subject         = "div.side-a>div>strong"
-	selector_for_pronounce       = "div.side-a>div.inner-block>div>audio" //field 'src'
-	selector_for_explain         = "div.side-b>div.inner-block"
+	main_notes_page                    = "https://smarte.greenforest.ua/book/6b83b23209033d606be62c9d237d2b1f01bd82fc/4a814ae3f003aede2422dabd06a31fe8175f30be"
+	selector_for_navigation_item_notes = "div[class*=item-list]"
+	selector_for_flash_card_notes      = "div.flashcard"
+	selector_for_subject_notes         = "div.side-a>div>strong"
+	selector_for_pronouns_notes        = "div.side-a>div.inner-block>div>audio" //field 'src'
+	selector_for_explain_notes         = "div.side-b>div.inner-block"
 )
 
 type notesCardExtractor struct {
@@ -145,7 +144,7 @@ func (e *notesCardExtractor) GetCards(ctx context.Context, lessonIndex int) (*[]
 					return nil, err
 				}
 
-				cardLocators, err := page.Locator(selector_for_flash_card).All()
+				cardLocators, err := page.Locator(selector_for_flash_card_notes).All()
 				if err != nil {
 					e.logger.Error("failed get flashcards from page", slog.Any("err", err.Error()))
 					return nil, err
@@ -197,7 +196,7 @@ func (e notesCardExtractor) gotoNotesPage(ctx context.Context) (playwright.Page,
 			}
 
 			e.logger.Debug("go to main page")
-			_, err = page.Goto(mainNotesPage)
+			_, err = page.Goto(main_notes_page)
 			if err != nil {
 				e.logger.Error("failed go to main Notes page", slog.Any("err", err.Error()))
 				return nil, err
@@ -245,7 +244,7 @@ func (e *notesCardExtractor) getNavigationItemWithInnerItems(ctx context.Context
 	}
 
 	//wait to open inner navigation items
-	err = navigationItemLocator.Locator(selector_for_navigation_item).First().WaitFor()
+	err = navigationItemLocator.Locator(selector_for_navigation_item_notes).First().WaitFor()
 	if err != nil {
 		e.logger.Error("failed waiting open inner navigation items", slog.Any("err", err.Error()))
 		return nil, err
@@ -265,12 +264,12 @@ func (e *notesCardExtractor) getNavigationItemByLabel(ctx context.Context, page 
 		{
 			e.logger.Debug("get all navigation item locators")
 
-			err := page.Locator(selector_for_navigation_item).First().WaitFor()
+			err := page.Locator(selector_for_navigation_item_notes).First().WaitFor()
 			if err != nil {
 				e.logger.Error("failed wait for loading navigation items", slog.Any("err", err.Error()))
 				return nil, err
 			}
-			navigationItemLocators, err := page.Locator(selector_for_navigation_item).All()
+			navigationItemLocators, err := page.Locator(selector_for_navigation_item_notes).All()
 			if err != nil {
 				e.logger.Error("failed get locators with navigation item", slog.Any("err", err.Error()))
 				return nil, err
@@ -309,7 +308,7 @@ func (e *notesCardExtractor) getLessonLocators(ctx context.Context, page playwri
 				return nil, err
 			}
 
-			navigationItemLocators, err := wordListLocator.Locator(selector_for_navigation_item).All()
+			navigationItemLocators, err := wordListLocator.Locator(selector_for_navigation_item_notes).All()
 			if err != nil {
 				e.logger.Error("failed get lesson navigation items", slog.Any("err", err.Error()))
 				return nil, err
@@ -339,22 +338,22 @@ func (e *notesCardExtractor) getCard(ctx context.Context, lessonLabel string, ca
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				pronouns, err = e.getPronounce(ctx, cardLocator)
+				pronouns, err = e.getPronouns(ctx, cardLocator)
 			}()
 			wg.Wait()
 			if err != nil {
 				return nil, err
 			}
 
-			subject, err := e.getInnerTextFromChild(cardLocator, selector_for_subject)
+			subject, err := getInnerTextFromChild(e.logger, cardLocator, selector_for_subject_notes)
 			if err != nil {
 				return nil, err
 			}
-			explain, err := e.getInnerTextFromChild(cardLocator, selector_for_explain)
+			explain, err := getInnerTextFromChild(e.logger, cardLocator, selector_for_explain_notes)
 			if err != nil {
 				return nil, err
 			}
-			subjectType := e.getSubjectType(*subject)
+			subjectType := getSubjectType(*subject)
 
 			card := &models.NotesCard{
 				Subject:     *subject,
@@ -427,35 +426,18 @@ func (e *notesCardExtractor) getCardsFromChan(ctx context.Context, chanError cha
 	}
 }
 
-func (e *notesCardExtractor) getSubjectType(subject string) models.SubjectType {
-	if strings.Contains(subject, " ") {
-		return models.SubjectTypePhrase
-	}
-	return models.SubjectTypeWord
-}
-
-func (e *notesCardExtractor) getInnerTextFromChild(parentLocator playwright.Locator, selector string) (*string, error) {
-	childLocator := parentLocator.Locator(selector_for_explain)
-	innerText, err := childLocator.InnerText()
+func (e *notesCardExtractor) getPronouns(ctx context.Context, cardLocator playwright.Locator) (io.Reader, error) {
+	pronounsFileLocator := cardLocator.Locator(selector_for_pronouns_notes)
+	pronounsFileUrl, err := pronounsFileLocator.GetAttribute("src")
 	if err != nil {
-		e.logger.Error("failed get inner text from locator", slog.Any("err", err.Error()))
-		return nil, err
-	}
-	return &innerText, nil
-}
-
-func (e *notesCardExtractor) getPronounce(ctx context.Context, cardLocator playwright.Locator) (io.Reader, error) {
-	pronounceFileLocator := cardLocator.Locator(selector_for_pronounce)
-	pronounceFileUrl, err := pronounceFileLocator.GetAttribute("src")
-	if err != nil {
-		e.logger.Error("failed get pronounce file url", slog.Any("err", err.Error()))
+		e.logger.Error("failed get pronouns file from notes", slog.Any("err", err.Error()))
 		return nil, err
 	}
 
-	pronounce, err := e.fileDownloader.Download(ctx, pronounceFileUrl)
+	pronouns, err := e.fileDownloader.Download(ctx, pronounsFileUrl)
 	if err != nil {
 		return nil, err
 	}
 
-	return pronounce, nil
+	return pronouns, nil
 }

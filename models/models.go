@@ -41,9 +41,9 @@ type NotesCard struct {
 type CambridgeCard struct {
 	Subject       string
 	SubjectType   SubjectType
-	Pronouns      *io.Reader // Can be nil, if subject is phrase
-	Transcription *string    //
-	Explain       string
+	Pronouns      io.Reader // Can be nil, if subject is phrase
+	Transcription *string   //
+	Explains      []string
 	Examples      []string
 }
 
