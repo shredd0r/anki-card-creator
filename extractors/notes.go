@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 
@@ -333,7 +332,7 @@ func (e *notesCardExtractor) getCard(ctx context.Context, lessonLabel string, ca
 	default:
 		{
 			var err error
-			var pronouns io.Reader
+			var pronouns *models.File
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
 			go func() {
@@ -426,7 +425,7 @@ func (e *notesCardExtractor) getCardsFromChan(ctx context.Context, chanError cha
 	}
 }
 
-func (e *notesCardExtractor) getPronouns(ctx context.Context, cardLocator playwright.Locator) (io.Reader, error) {
+func (e *notesCardExtractor) getPronouns(ctx context.Context, cardLocator playwright.Locator) (*models.File, error) {
 	pronounsFileLocator := cardLocator.Locator(selector_for_pronouns_notes)
 	pronounsFileUrl, err := pronounsFileLocator.GetAttribute("src")
 	if err != nil {
@@ -434,10 +433,5 @@ func (e *notesCardExtractor) getPronouns(ctx context.Context, cardLocator playwr
 		return nil, err
 	}
 
-	pronouns, err := e.fileDownloader.Download(ctx, pronounsFileUrl)
-	if err != nil {
-		return nil, err
-	}
-
-	return pronouns, nil
+	return e.fileDownloader.Download(ctx, pronounsFileUrl)
 }

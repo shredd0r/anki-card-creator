@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/url"
 	"sync"
@@ -98,7 +97,7 @@ func (e *implCambridgeCardExtractor) GetCard(ctx context.Context, subject string
 	}
 
 	mainPageLocator := page.Locator("html")
-	var pronouns io.Reader
+	var pronouns *models.File
 	var errPronouns error
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
@@ -226,7 +225,7 @@ func (e *implCambridgeCardExtractor) getAllStringsBySelector(mainPageLocator pla
 	return &arrOfStr, nil
 }
 
-func (e *implCambridgeCardExtractor) getPronouns(ctx context.Context, mainPageLocator playwright.Locator) (io.Reader, error) {
+func (e *implCambridgeCardExtractor) getPronouns(ctx context.Context, mainPageLocator playwright.Locator) (*models.File, error) {
 	pronounsFileLocator := mainPageLocator.Locator(selector_for_pronouns_cambridge)
 	pronounsFilePath, err := pronounsFileLocator.GetAttribute("src")
 	if err != nil {
@@ -239,11 +238,5 @@ func (e *implCambridgeCardExtractor) getPronouns(ctx context.Context, mainPageLo
 		return nil, err
 	}
 
-	e.logger.Debug(pronounsFileUrl)
-	pronouns, err := e.fileDownloader.Download(ctx, pronounsFileUrl)
-	if err != nil {
-		return nil, err
-	}
-
-	return pronouns, nil
+	return e.fileDownloader.Download(ctx, pronounsFileUrl)
 }

@@ -6,10 +6,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+
+	"github.com/shredd0r/anki-card-creator/models"
 )
 
 type FileDownloader interface {
-	Download(ctx context.Context, urlToFile string) (io.Reader, error)
+	Download(ctx context.Context, urlToFile string) (*models.File, error)
 }
 
 type implFileDownloader struct {
@@ -22,7 +24,7 @@ func NewFileDownloader(logger *slog.Logger) FileDownloader {
 	}
 }
 
-func (d *implFileDownloader) Download(ctx context.Context, urlToFile string) (io.Reader, error) {
+func (d *implFileDownloader) Download(ctx context.Context, urlToFile string) (*models.File, error) {
 	resp, err := http.Get(urlToFile)
 	if err != nil {
 		d.logger.Error("failed download file", slog.Any("err", err.Error()))
@@ -43,5 +45,10 @@ func (d *implFileDownloader) Download(ctx context.Context, urlToFile string) (io
 		return nil, err
 	}
 
-	return bufferReader, nil
+	file := &models.File{
+		Content: bufferReader,
+		Type:    "",
+	}
+
+	return file, nil
 }

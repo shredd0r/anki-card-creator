@@ -18,15 +18,26 @@ const (
 	EnglishLevelB1   = 1
 )
 
+type Target struct {
+	Subject     string
+	SubjectType SubjectType
+	DeckName    string
+}
+
+type File struct {
+	Content io.Reader
+	Type    string
+}
+
 type FlashCard struct {
 	Subject       string
 	SubjectType   SubjectType
 	DeckName      string
-	EnglishLevel  EnglishLevel
-	Pronouns      io.Reader // Can be nil if subject is phrase
-	Transcription *string   //
+	EnglishLevel  EnglishLevel // maybe its field unecessery
+	Pronouns      *File        // Can be nil if subject is phrase
+	Transcription *string      //
 	Explain       string
-	Picture       io.Reader
+	Picture       File
 	Examples      []string
 }
 
@@ -34,15 +45,15 @@ type NotesCard struct {
 	Subject     string
 	SubjectType SubjectType
 	LessonName  string
-	Pronouns    io.Reader // Can be nil, if subject is phrase
+	Pronouns    *File // Can be nil, if subject is phrase
 	Explain     string
 }
 
 type CambridgeCard struct {
 	Subject       string
 	SubjectType   SubjectType
-	Pronouns      io.Reader // Can be nil, if subject is phrase
-	Transcription *string   //
+	Pronouns      *File   // Can be nil, if subject is phrase
+	Transcription *string //
 	Explains      []string
 	Examples      []string
 }
@@ -50,7 +61,7 @@ type CambridgeCard struct {
 type QuizletCard struct {
 	Subject     string
 	SubjectType SubjectType
-	Pronouns    *io.Reader
+	Pronouns    *File
 	Explain     string
-	Picture     *io.Reader
+	Picture     *File
 }
