@@ -10,12 +10,16 @@ import (
 	"github.com/shredd0r/anki-card-creator/models"
 )
 
-const main_page = "https://www.google.com/imghp?hl=en"
+const (
+	main_page                      = "https://www.google.com/imghp?hl=en"
+	selector_for_matched_image     = "g-img > img[style*='object-position']"
+	selector_for_detail_view_image = "a[role='link'] > img[jsaction='']:first-child"
+)
 
 var errIndexOutOfRange = errors.New("index out of range")
 
 type GoogleImageProvider interface {
-	Get(ctx context.Context, numOfPicture uint, search string) (*models.File, error)
+	Get(ctx context.Context, numOfPicture uint, searchQuery string) (*models.File, error)
 }
 
 func NewGoogleImageProvider(logger *slog.Logger, browser playwright.Browser, fileDownloader downloader.FileDownloader) GoogleImageProvider {
@@ -32,29 +36,48 @@ type implGoogleImageProvider struct {
 	fileDownloader downloader.FileDownloader
 }
 
-func (p *implGoogleImageProvider) Get(ctx context.Context, numOfPicture uint, search string) (*models.File, error) {
-	page, err := p.moveToPageWithImages(search)
+// Get - method for getting picture from Google Image. Picture returns as buffer reader, not saving in disk
+// numOfPicture - index for getting picture from list of matched pictures
+// searchQuery - query for searching pictures
+func (p *implGoogleImageProvider) Get(ctx context.Context, numOfPicture uint, searchQuery string) (*models.File, error) {
+	page, err := p.moveToPageWithImages(searchQuery)
 	if err != nil {
 		return nil, err
 	}
 
-	page.Locator("g-img > img").WaitFor()
-	imgLocators, err := page.Locator("g-img > img").All()
+	// Waiting for when loading all matched pictures on page
+	err = page.Locator(selector_for_matched_image).First().WaitFor()
+	if err != nil {
+		p.logger.Error("failed wait for loading images on page or no one image is matched", slog.Any("err", err.Error()))
+		return nil, err
+	}
+
+	matchedImgLocators, err := page.Locator(selector_for_matched_image).All()
 	if err != nil {
 		p.logger.Error("failed get images from google page", slog.Any("err", err.Error()))
 		return nil, err
 	}
 
-	if int(numOfPicture) > len(imgLocators) {
+	if int(numOfPicture) > len(matchedImgLocators) {
 		p.logger.Error("number of picture out of range array images")
 		return nil, errIndexOutOfRange
 	}
 
-	imgUrl, err := imgLocators[numOfPicture].GetAttribute("src")
+	// Click to matched picture for open detail view.
+	// Detail view has source to picture for downloading.
+	err = matchedImgLocators[numOfPicture].Click()
 	if err != nil {
-		p.logger.Error("failed get attribute from image locator", slog.Any("err", err.Error()))
+		p.logger.Error("failed click to searching image", slog.Any("err", err.Error()))
 		return nil, err
 	}
+
+	imgViewLocator := page.Locator(selector_for_detail_view_image)
+	imgUrl, err := imgViewLocator.GetAttribute("src")
+	if err != nil {
+		p.logger.Error("failed get url to image from image view locator", slog.Any("err", err.Error()))
+		return nil, err
+	}
+
 	return p.fileDownloader.Download(ctx, imgUrl)
 }
 
