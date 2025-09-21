@@ -2,12 +2,15 @@ package extractors
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 
 	"github.com/playwright-community/playwright-go"
 	"github.com/shredd0r/anki-card-creator/models"
 )
+
+var errIndexOutOfRange = errors.New("index out of range")
 
 type CardExtractor[TYPE_OF_CARD any] interface {
 	GetLength(ctx context.Context) (*int, error)

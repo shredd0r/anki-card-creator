@@ -13,8 +13,6 @@ import (
 	"github.com/shredd0r/anki-card-creator/models"
 )
 
-var errIndexOutOfRange = errors.New("index out of range")
-
 const (
 	main_notes_page                    = "https://smarte.greenforest.ua/book/6b83b23209033d606be62c9d237d2b1f01bd82fc/4a814ae3f003aede2422dabd06a31fe8175f30be"
 	selector_for_navigation_item_notes = "div[class*=item-list]"
