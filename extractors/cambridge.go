@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/playwright-community/playwright-go"
@@ -21,7 +22,7 @@ const (
 	selector_for_explain_cambridge       = "div[class*='def ddef']"
 	selector_for_example_cambridge       = "div.examp.dexamp"
 	selector_for_transcription_cambridge = "span[class='pron dpron']"
-	selector_for_pronouns_cambridge      = "#audio2 > source:nth-child(2)"
+	selector_for_pronouns_cambridge      = "#audio2 > source:nth-child(3)"
 )
 
 type CambridgeCardExtractor interface {
@@ -232,10 +233,20 @@ func (e *implCambridgeCardExtractor) getPronouns(ctx context.Context, mainPageLo
 		e.logger.Error("failed get pronouns file from notes", slog.Any("err", err.Error()))
 		return nil, err
 	}
-	pronounsFileUrl, err := url.JoinPath(base_url, pronounsFilePath)
-	if err != nil {
-		e.logger.Error("failed make url for download file", slog.Any("err", err.Error()))
-		return nil, err
+
+	// Prononcations Audio files is placed on two ways:
+	// - amazon s3
+	// - cambridge dictionary servers
+	// If file is placed on cambridge dictionary servers, path from src doenst have protol and domain
+	var pronounsFileUrl string
+	if strings.Contains(pronounsFilePath, "https://s3") {
+		pronounsFileUrl = pronounsFilePath
+	} else {
+		pronounsFileUrl, err = url.JoinPath(base_url, pronounsFilePath)
+		if err != nil {
+			e.logger.Error("failed make url for download file", slog.Any("err", err.Error()))
+			return nil, err
+		}
 	}
 
 	return e.fileDownloader.Download(ctx, pronounsFileUrl)

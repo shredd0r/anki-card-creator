@@ -1,4 +1,4 @@
-package provider
+package providers
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 
 const (
 	main_page                      = "https://www.google.com/imghp?hl=en"
-	selector_for_matched_image     = "g-img > img[style*='object-position']"
+	selector_for_matched_image     = "img[style*='object-position']"
 	selector_for_detail_view_image = "a[role='link'] > img[jsaction='']:first-child"
 )
 

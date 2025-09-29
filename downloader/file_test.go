@@ -3,7 +3,6 @@ package downloader
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"testing"
@@ -32,25 +31,25 @@ func TestPositiveDownloadFiles(t *testing.T) {
 			Name:             "Downloaded file was jpg",
 			UrlToFile:        url_to_jpg_file,
 			ExpectedFileName: "jpg-file.jpg",
-			ExpectedFileType: "jpeg",
+			ExpectedFileType: "image/jpeg",
 		},
 		{
 			Name:             "Downloaded file was png",
 			UrlToFile:        url_to_png_file,
 			ExpectedFileName: "png-file.png",
-			ExpectedFileType: "png",
+			ExpectedFileType: "image/png",
 		},
 		{
 			Name:             "Downlaoded file was svg",
 			UrlToFile:        url_to_svg_file,
 			ExpectedFileName: "svg-file.svg",
-			ExpectedFileType: "svg",
+			ExpectedFileType: "image/svg+xml",
 		},
 		{
 			Name:             "Download from file from Wikipedia",
 			UrlToFile:        url_to_wikipedia_file,
 			ExpectedFileName: "wikipedia-file.png",
-			ExpectedFileType: "png",
+			ExpectedFileType: "image/png",
 		},
 	}
 
@@ -72,10 +71,9 @@ func positiveDownloadTestCase(t *testing.T, tc *testCase, fileDownloader FileDow
 	assert.NoError(t, err)
 	assert.NotNil(t, downloadedFile)
 
-	actualFileBytes, err := io.ReadAll(downloadedFile.Content)
-	assert.NoError(t, err)
+	actualFileBytes := downloadedFile.Content
 
-	assert.Equal(t, tc.ExpectedFileType, downloadedFile.Type, "type of files not equal")
+	assert.Equal(t, tc.ExpectedFileType, downloadedFile.MIMEType, "type of files not equal")
 	assert.Equalf(t, len(expectedFileBytes), len(actualFileBytes), "size of expected and actual files not equal")
 	assert.Truef(t, bytes.Equal(expectedFileBytes, actualFileBytes), "expected file not equal with actual file")
 }
