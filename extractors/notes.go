@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 
 	"github.com/playwright-community/playwright-go"
 	"github.com/shredd0r/anki-card-creator/config"
 	"github.com/shredd0r/anki-card-creator/downloader"
-	"github.com/shredd0r/anki-card-creator/models"
 )
 
 const (
@@ -18,20 +16,26 @@ const (
 	selector_for_navigation_item_notes = "div[class*=item-list]"
 	selector_for_flash_card_notes      = "div.flashcard"
 	selector_for_subject_notes         = "div.side-a>div>strong"
-	selector_for_pronouns_notes        = "div.side-a>div.inner-block>div>audio" //field 'src'
-	selector_for_explain_notes         = "div.side-b>div.inner-block"
 )
 
-type notesCardExtractor struct {
-	lengthCache    *int
-	cfg            config.NotesConfig
-	logger         *slog.Logger
-	browser        playwright.Browser
-	fileDownloader downloader.FileDownloader
+var errIndexOutOfRange = errors.New("index out of range")
+
+type NotesExtractor interface {
+	GetLessonsLength(ctx context.Context) (*int, error)
+	GetLessons(ctx context.Context) (*[]string, error)
+	GetSubjectsByLesson(ctx context.Context, indexOfLesson int) (*[]string, error)
 }
 
-func NewNotesCardExtractor(logger *slog.Logger, cfg *config.Config, browser playwright.Browser, fileDownloader downloader.FileDownloader) CardExtractor[models.NotesCard] {
-	return &notesCardExtractor{
+type implNotesExtractor struct {
+	lessonsLengthCache *int
+	cfg                config.NotesConfig
+	logger             *slog.Logger
+	browser            playwright.Browser
+	fileDownloader     downloader.FileDownloader
+}
+
+func NewNotesCardExtractor(logger *slog.Logger, cfg *config.Config, browser playwright.Browser, fileDownloader downloader.FileDownloader) NotesExtractor {
+	return &implNotesExtractor{
 		logger:         logger.With(slog.Any("struct", "notes-card-extractor")),
 		cfg:            cfg.NotesConfig,
 		browser:        browser,
@@ -39,7 +43,7 @@ func NewNotesCardExtractor(logger *slog.Logger, cfg *config.Config, browser play
 	}
 }
 
-func (e *notesCardExtractor) GetLength(ctx context.Context) (*int, error) {
+func (e *implNotesExtractor) GetLessonsLength(ctx context.Context) (*int, error) {
 	e.logger.Debug("start method GetLength")
 	select {
 	case <-ctx.Done():
@@ -49,8 +53,8 @@ func (e *notesCardExtractor) GetLength(ctx context.Context) (*int, error) {
 		}
 	default:
 		{
-			if e.lengthCache != nil {
-				return e.lengthCache, nil
+			if e.lessonsLengthCache != nil {
+				return e.lessonsLengthCache, nil
 			}
 
 			page, err := e.gotoNotesPage(ctx)
@@ -64,13 +68,13 @@ func (e *notesCardExtractor) GetLength(ctx context.Context) (*int, error) {
 			}
 
 			length := len(*lessonLocators)
-			e.lengthCache = &length
+			e.lessonsLengthCache = &length
 			return &length, nil
 		}
 	}
 }
 
-func (e *notesCardExtractor) GetLessons(ctx context.Context) (*[]string, error) {
+func (e *implNotesExtractor) GetLessons(ctx context.Context) (*[]string, error) {
 	select {
 	case <-ctx.Done():
 		{
@@ -104,8 +108,8 @@ func (e *notesCardExtractor) GetLessons(ctx context.Context) (*[]string, error) 
 	}
 }
 
-func (e *notesCardExtractor) GetCards(ctx context.Context, lessonIndex int) (*[]*models.NotesCard, error) {
-	e.logger.Debug(fmt.Sprintf("start get cards from lesson, by index: %d", lessonIndex))
+func (e *implNotesExtractor) GetSubjectsByLesson(ctx context.Context, indexOfLesson int) (*[]string, error) {
+	e.logger.Debug(fmt.Sprintf("start get cards from lesson, by index: %d", indexOfLesson))
 	select {
 	case <-ctx.Done():
 		{
@@ -114,12 +118,12 @@ func (e *notesCardExtractor) GetCards(ctx context.Context, lessonIndex int) (*[]
 		}
 	default:
 		{
-			length, err := e.GetLength(ctx)
+			length, err := e.GetLessonsLength(ctx)
 			if err != nil {
 				return nil, err
 			}
 
-			if lessonIndex < *length && lessonIndex > -1 {
+			if indexOfLesson < *length && indexOfLesson > -1 {
 				page, err := e.gotoNotesPage(ctx)
 				if err != nil {
 					return nil, err
@@ -130,7 +134,7 @@ func (e *notesCardExtractor) GetCards(ctx context.Context, lessonIndex int) (*[]
 					return nil, err
 				}
 
-				lessonLabel := (*lessonLabels)[lessonIndex]
+				lessonLabel := (*lessonLabels)[indexOfLesson]
 				//This method click on navigation item and wait when page is load
 				_, err = e.getWordlistNavigation(ctx, page)
 				if err != nil {
@@ -147,26 +151,18 @@ func (e *notesCardExtractor) GetCards(ctx context.Context, lessonIndex int) (*[]
 					return nil, err
 				}
 
-				// Create channels for future goroutines, which will get note cards from browser
-				chanNoteCards := make(chan *models.NotesCard, len(cardLocators))
-				chanError := make(chan error)
-				defer func() {
-					close(chanNoteCards)
-					close(chanError)
-				}()
-
-				wg := &sync.WaitGroup{}
-				for cardIndex, cardLocator := range cardLocators {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
-						e.logger.Debug("start get card from page", slog.Any("index", cardIndex))
-						e.getCardAndPutToChan(ctx, lessonLabel, cardIndex, cardLocator, chanError, chanNoteCards)
-						e.logger.Debug("end get card from page", slog.Any("index", cardIndex))
-					}()
+				e.logger.Debug("start getting subjects from card locators")
+				subjects := make([]string, len(cardLocators))
+				for i := range cardLocators {
+					subject, err := e.getInnerTextFromChild(cardLocators[i], selector_for_subject_notes)
+					if err != nil {
+						return nil, err
+					}
+					subjects[i] = *subject
 				}
-				wg.Wait()
-				return e.getCardsFromChan(ctx, chanError, chanNoteCards)
+
+				e.logger.Debug("end getting subjects from card locators")
+				return &subjects, nil
 			}
 
 			return nil, errIndexOutOfRange
@@ -174,7 +170,7 @@ func (e *notesCardExtractor) GetCards(ctx context.Context, lessonIndex int) (*[]
 	}
 }
 
-func (e notesCardExtractor) gotoNotesPage(ctx context.Context) (playwright.Page, error) {
+func (e implNotesExtractor) gotoNotesPage(ctx context.Context) (playwright.Page, error) {
 	e.logger.Debug("start method 'gotoNotesPageAndOpenWordList'")
 
 	select {
@@ -223,11 +219,11 @@ func (e notesCardExtractor) gotoNotesPage(ctx context.Context) (playwright.Page,
 
 }
 
-func (e *notesCardExtractor) getWordlistNavigation(ctx context.Context, page playwright.Page) (playwright.Locator, error) {
+func (e *implNotesExtractor) getWordlistNavigation(ctx context.Context, page playwright.Page) (playwright.Locator, error) {
 	return e.getNavigationItemWithInnerItems(ctx, page, "Wordlist")
 }
 
-func (e *notesCardExtractor) getNavigationItemWithInnerItems(ctx context.Context, page playwright.Page, navigationItemLabel string) (playwright.Locator, error) {
+func (e *implNotesExtractor) getNavigationItemWithInnerItems(ctx context.Context, page playwright.Page, navigationItemLabel string) (playwright.Locator, error) {
 	navigationItemLocator, err := e.getNavigationItemByLabel(ctx, page, navigationItemLabel)
 	if err != nil {
 		return nil, err
@@ -249,7 +245,7 @@ func (e *notesCardExtractor) getNavigationItemWithInnerItems(ctx context.Context
 	return navigationItemLocator, nil
 }
 
-func (e *notesCardExtractor) getNavigationItemByLabel(ctx context.Context, page playwright.Page, label string) (playwright.Locator, error) {
+func (e *implNotesExtractor) getNavigationItemByLabel(ctx context.Context, page playwright.Page, label string) (playwright.Locator, error) {
 	e.logger.Debug("start method 'getNavigationItemByLabel'")
 	select {
 	case <-ctx.Done():
@@ -291,7 +287,7 @@ func (e *notesCardExtractor) getNavigationItemByLabel(ctx context.Context, page 
 	}
 }
 
-func (e *notesCardExtractor) getLessonLocators(ctx context.Context, page playwright.Page) (*[]playwright.Locator, error) {
+func (e *implNotesExtractor) getLessonLocators(ctx context.Context, page playwright.Page) (*[]playwright.Locator, error) {
 	select {
 	case <-ctx.Done():
 		{
@@ -320,116 +316,12 @@ func (e *notesCardExtractor) getLessonLocators(ctx context.Context, page playwri
 	}
 }
 
-func (e *notesCardExtractor) getCard(ctx context.Context, lessonLabel string, cardLocator playwright.Locator) (*models.NotesCard, error) {
-	select {
-	case <-ctx.Done():
-		{
-			e.logger.Debug("context is done, leaving from method 'getCard'")
-			return nil, ctx.Err()
-		}
-	default:
-		{
-			var err error
-			var pronouns *models.File
-			wg := &sync.WaitGroup{}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				pronouns, err = e.getPronouns(ctx, cardLocator)
-			}()
-			wg.Wait()
-			if err != nil {
-				return nil, err
-			}
-
-			subject, err := getInnerTextFromChild(e.logger, cardLocator, selector_for_subject_notes)
-			if err != nil {
-				return nil, err
-			}
-			explain, err := getInnerTextFromChild(e.logger, cardLocator, selector_for_explain_notes)
-			if err != nil {
-				return nil, err
-			}
-			subjectType := getSubjectType(*subject)
-
-			card := &models.NotesCard{
-				Subject:     *subject,
-				SubjectType: subjectType,
-				LessonName:  lessonLabel,
-				Pronouns:    pronouns,
-				Explain:     *explain,
-			}
-			return card, nil
-		}
-	}
-}
-
-// getCardAndPutToChan is method for putting note card received method 'getCard' to data channel
-// Also, this method handle errors, if error happend, this error will be put in error channel
-// It is expected, that this method will run in goroutine
-func (e *notesCardExtractor) getCardAndPutToChan(ctx context.Context, lessonLabel string, cardIndex int, cardLocator playwright.Locator, chanError chan error, chanNoteCards chan *models.NotesCard) {
-	select {
-	case <-chanError:
-		{
-			e.logger.Debug("some goroutine for get card return error, stopping goroutines", slog.Any("cardIndex", cardIndex))
-			return
-		}
-	case <-ctx.Done():
-		{
-			e.logger.Debug("context is done, leaving from goroutine for get note card")
-			chanError <- ctx.Err()
-			return
-		}
-	default:
-		{
-			e.logger.Debug(fmt.Sprintf("start getting card: %d", cardIndex))
-			noteCard, err := e.getCard(ctx, lessonLabel, cardLocator)
-			if err != nil {
-				e.logger.Error("failed get card from note page", slog.Any("err", err.Error()))
-				chanError <- err
-				return
-			}
-
-			chanNoteCards <- noteCard
-		}
-	}
-}
-
-// getCardsFromChan is method for get all card from data channel and put it to array
-// Also, this method handle errors, if error happend, this error will be put in error channel
-// It's expected, that this method will run in main goroutine
-func (e *notesCardExtractor) getCardsFromChan(ctx context.Context, chanError chan error, chanNoteCards chan *models.NotesCard) (*[]*models.NotesCard, error) {
-	var noteCards = make([]*models.NotesCard, len(chanNoteCards))
-
-	select {
-	case <-chanError:
-		{
-			err := <-chanError
-			e.logger.Debug("some goroutine for get card return error, stopping 'GetCards'", slog.Any("err", err.Error()))
-			return nil, err
-		}
-	case <-ctx.Done():
-		{
-			e.logger.Debug("context is done, leaving from 'GetCards'")
-			return nil, ctx.Err()
-		}
-	default:
-		{
-			for index := range noteCards {
-				noteCards[index] = <-chanNoteCards
-			}
-			return &noteCards, nil
-		}
-	}
-}
-
-func (e *notesCardExtractor) getPronouns(ctx context.Context, cardLocator playwright.Locator) (*models.File, error) {
-	pronounsFileLocator := cardLocator.Locator(selector_for_pronouns_notes)
-	pronounsFileUrl, err := pronounsFileLocator.GetAttribute("src")
+func (e *implNotesExtractor) getInnerTextFromChild(parentLocator playwright.Locator, selector string) (*string, error) {
+	childLocator := parentLocator.Locator(selector).First()
+	innerText, err := childLocator.InnerText()
 	if err != nil {
-		e.logger.Error("failed get pronouns file from notes", slog.Any("err", err.Error()))
+		e.logger.Error("failed get inner text from locator", slog.Any("err", err.Error()))
 		return nil, err
 	}
-
-	return e.fileDownloader.Download(ctx, pronounsFileUrl)
+	return &innerText, nil
 }
