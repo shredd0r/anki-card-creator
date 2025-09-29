@@ -1,7 +1,5 @@
 package models
 
-import "io"
-
 type SubjectType int
 
 const (
@@ -25,19 +23,18 @@ type Target struct {
 }
 
 type File struct {
-	Content io.Reader
-	Type    string
+	Content  []byte
+	MIMEType string
 }
 
-type FlashCard struct {
+type Flashcard struct {
 	Subject       string
 	SubjectType   SubjectType
 	DeckName      string
-	EnglishLevel  EnglishLevel // maybe its field unecessery
-	Pronouns      *File        // Can be nil if subject is phrase
-	Transcription *string      //
+	Pronouns      *File   // Can be nil if subject is phrase
+	Transcription *string //
 	Explain       string
-	Picture       File
+	Picture       *File
 	Examples      []string
 }
 

@@ -1,5 +1,7 @@
 package downloader
 
+//go:generate mockgen -source file.go -destination mock/file_mock.go
+
 import (
 	"context"
 	"io"

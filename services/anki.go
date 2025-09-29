@@ -1,5 +1,7 @@
 package services
 
+//go:generate mockgen -source anki.go -destination mock/anki_mock.go
+
 import (
 	"context"
 	"encoding/base64"
@@ -43,48 +45,48 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, deckname string, tem
 		return nil
 	}
 
+	ankiCardFields := map[string]string{
+		"Subject":      flashcard.Subject,
+		"Paraphrase":   flashcard.Explain,
+		"Example":      s.formatExampleField(&flashcard),
+		"Has_Spelling": "1",
+	}
+
+	if flashcard.Transcription != nil {
+		ankiCardFields["Transcription"] = *flashcard.Transcription
+	}
+
 	g := errgroup.Group{}
-	var filenameOfPronounce string
-	var filenameOfPicture string
 
-	// TODO before start store, need check if file not nil
-	// Start store pronounce file in anki with goroutine
-	g.Go(func() error {
-		filename, err := s.storeMediafileAndReturnFilename(ctx, flashcard.Subject, flashcard.Pronouns)
-		if err != nil {
-			return err
-		}
-		filenameOfPronounce = filename
-		return nil
-	})
+	//  Store picture file in anki with goroutine if card has picture
+	if flashcard.Picture != nil {
+		g.Go(func() error {
+			filename, err := s.storeMediafileAndReturnFilename(ctx, flashcard.Subject, flashcard.Picture)
+			if err != nil {
+				return err
+			}
+			ankiCardFields["Picture"] = filename
+			return nil
+		})
 
-	// TODO before start store, need check if file not nil
-	// Start store picture file in anki with goroutine
-	g.Go(func() error {
-		filename, err := s.storeMediafileAndReturnFilename(ctx, flashcard.Subject, flashcard.Picture)
-		if err != nil {
-			return err
-		}
-		filenameOfPicture = filename
-		return nil
-	})
+	}
+
+	//  Store picture file in anki with goroutine if card has pronunciation
+	if flashcard.Pronouns != nil {
+		g.Go(func() error {
+			filename, err := s.storeMediafileAndReturnFilename(ctx, flashcard.Subject, flashcard.Pronouns)
+			if err != nil {
+				return err
+			}
+			ankiCardFields["Pronunciation"] = filename
+			return nil
+		})
+	}
 
 	err = g.Wait()
 	if err != nil {
 		s.logger.Error("failed store file in anki", slog.Any("err", err.Error()))
 		return err
-	}
-
-	ankiCardFields := map[string]string{
-		"Subject":      flashcard.Subject,
-		"Paraphrase":   flashcard.Explain,
-		"Example":      flashcard.Examples[0],
-		"Has_Spelling": "1",
-
-		// TODO Before add it, need check, this fields is not nil
-		"Transcription": *flashcard.Transcription,
-		"Pronunciation": filenameOfPronounce,
-		"Picture":       filenameOfPicture,
 	}
 
 	restErr := s.client.Notes.Add(ankiconnect.Note{
@@ -207,4 +209,25 @@ func (s *implAnkiService) storeMediafileAndReturnFilename(ctx context.Context, s
 	}
 
 	return filename, nil
+}
+
+// Flashcard in anki expect example string like that:
+// <ul>
+//
+//	<li>The lime is sour.</li>
+//	<li>We have a lime tree.</li>
+//	<li>Cut the lime in half.</li>
+//
+// </ul>
+func (s *implAnkiService) formatExampleField(flashcard *models.Flashcard) string {
+	formatExamples := "<ul>%s</ul>"
+
+	examples := ""
+	for _, example := range flashcard.Examples {
+		examples += fmt.Sprintf("<li>%s</li>", example)
+	}
+
+	s.logger.Debug("examples: ", slog.String("example", examples))
+
+	return fmt.Sprintf(formatExamples, examples)
 }

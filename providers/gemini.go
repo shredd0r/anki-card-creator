@@ -1,5 +1,7 @@
 package providers
 
+//go:generate mockgen -source gemini.go -destination mock/gemini_mock.go
+
 import (
 	"context"
 	"encoding/json"
@@ -26,7 +28,6 @@ type ratingPictureResponse struct {
 	Analysis string
 }
 
-// TODO add checking out of tokens, 503 error code (server is overload)
 type GeminiProvider interface {
 	GenerateExamples(ctx context.Context, subject string) (*[]string, error)
 	GenerateExplain(ctx context.Context, subject string) (*string, error)

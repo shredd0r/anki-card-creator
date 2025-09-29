@@ -1,5 +1,7 @@
 package extractors
 
+//go:generate mockgen -source cambridge.go -destination mock/cambridge_mock.go
+
 import (
 	"context"
 	"errors"
@@ -107,7 +109,7 @@ func (e *implCambridgeCardExtractor) GetCard(ctx context.Context, subject string
 		pronouns, errPronouns = e.getPronouns(ctx, mainPageLocator)
 	}()
 
-	subjectType := getSubjectType(subject)
+	subjectType := e.getSubjectType(subject)
 
 	transcription, err := e.getTransacription(mainPageLocator)
 	if err != nil {
@@ -179,7 +181,7 @@ func (e *implCambridgeCardExtractor) gotoSubjectPage(ctx context.Context, subjec
 
 func (e *implCambridgeCardExtractor) getTransacription(mainPageLocator playwright.Locator) (*string, error) {
 	e.logger.Debug("start get transcription from cambridge page")
-	transcription, err := getInnerTextFromChild(e.logger, mainPageLocator, selector_for_transcription_cambridge)
+	transcription, err := e.getInnerTextFromChild(mainPageLocator, selector_for_transcription_cambridge)
 	if err != nil {
 		e.logger.Error("failed get transcriptinf from parent locator", slog.Any("err", err.Error()))
 		return nil, err
@@ -250,4 +252,21 @@ func (e *implCambridgeCardExtractor) getPronouns(ctx context.Context, mainPageLo
 	}
 
 	return e.fileDownloader.Download(ctx, pronounsFileUrl)
+}
+
+func (e *implCambridgeCardExtractor) getInnerTextFromChild(parentLocator playwright.Locator, selector string) (*string, error) {
+	childLocator := parentLocator.Locator(selector).First()
+	innerText, err := childLocator.InnerText()
+	if err != nil {
+		e.logger.Error("failed get inner text from locator", slog.Any("err", err.Error()))
+		return nil, err
+	}
+	return &innerText, nil
+}
+
+func (e *implCambridgeCardExtractor) getSubjectType(subject string) models.SubjectType {
+	if strings.Contains(subject, " ") {
+		return models.SubjectTypePhrase
+	}
+	return models.SubjectTypeWord
 }
