@@ -1,7 +1,5 @@
 package providers
 
-//go:generate mockgen -source gemini.go -destination mock/gemini_mock.go
-
 import (
 	"context"
 	"encoding/json"
@@ -16,7 +14,7 @@ import (
 
 var (
 	errServerIsOverload = errors.New("gemini server is overload")
-	errTokensAreOver    = errors.New("tokens for requests are over")
+	errQuotaIsOver      = errors.New("quota for requests is over")
 )
 
 const (
@@ -178,7 +176,7 @@ func (p *implGeminiProvider) wrapError(err error) error {
 		}
 	case http.StatusForbidden:
 		{
-			return errTokensAreOver
+			return errQuotaIsOver
 		}
 	default:
 		return err

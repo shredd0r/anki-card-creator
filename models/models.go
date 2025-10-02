@@ -31,7 +31,7 @@ type Flashcard struct {
 	Subject       string
 	SubjectType   SubjectType
 	DeckName      string
-	Pronouns      *File   // Can be nil if subject is phrase
+	Pronunciation *File   // Can be nil if subject is phrase
 	Transcription *string //
 	Explain       string
 	Picture       *File
@@ -48,8 +48,7 @@ type NotesCard struct {
 
 type CambridgeCard struct {
 	Subject       string
-	SubjectType   SubjectType
-	Pronouns      *File   // Can be nil, if subject is phrase
+	Pronunciation *File   // Can be nil, if subject is phrase
 	Transcription *string //
 	Explains      []string
 	Examples      []string

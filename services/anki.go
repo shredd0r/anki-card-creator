@@ -1,6 +1,7 @@
 package services
 
 //go:generate mockgen -source anki.go -destination mock/anki_mock.go
+//go:generate mockgen -destination mock/ankiconnect/ankiconnect_mock.go github.com/atselvan/ankiconnect MediaManager,DecksManager,NotesManager
 
 import (
 	"context"
@@ -20,7 +21,7 @@ import (
 var errMoreThanOneType = errors.New("matched more than 1 content types")
 
 type AnkiService interface {
-	StoreNewCard(ctx context.Context, deckname string, templateName string, flashcard models.Flashcard) error
+	StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error
 }
 
 type implAnkiService struct {
@@ -37,10 +38,9 @@ func NewAnkiService(logger *slog.Logger, client *ankiconnect.Client) AnkiService
 	}
 }
 
-// TODO add processing nil picture, pronounce files, transcription
 // TODO add checking if card already exist in deckname
-func (s *implAnkiService) StoreNewCard(ctx context.Context, deckname string, templateName string, flashcard models.Flashcard) error {
-	err := s.createDeckIfItNotExist(deckname)
+func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error {
+	err := s.createDeckIfItNotExist(flashcard.DeckName)
 	if err != nil {
 		return nil
 	}
@@ -48,7 +48,7 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, deckname string, tem
 	ankiCardFields := map[string]string{
 		"Subject":      flashcard.Subject,
 		"Paraphrase":   flashcard.Explain,
-		"Example":      s.formatExampleField(&flashcard),
+		"Example":      s.formatExampleField(flashcard),
 		"Has_Spelling": "1",
 	}
 
@@ -72,9 +72,9 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, deckname string, tem
 	}
 
 	//  Store picture file in anki with goroutine if card has pronunciation
-	if flashcard.Pronouns != nil {
+	if flashcard.Pronunciation != nil {
 		g.Go(func() error {
-			filename, err := s.storeMediafileAndReturnFilename(ctx, flashcard.Subject, flashcard.Pronouns)
+			filename, err := s.storeMediafileAndReturnFilename(ctx, flashcard.Subject, flashcard.Pronunciation)
 			if err != nil {
 				return err
 			}
@@ -90,7 +90,7 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, deckname string, tem
 	}
 
 	restErr := s.client.Notes.Add(ankiconnect.Note{
-		DeckName:  deckname,
+		DeckName:  flashcard.DeckName,
 		ModelName: templateName,
 		Fields:    ankiCardFields,
 	})

@@ -14,9 +14,13 @@ import (
 	"github.com/playwright-community/playwright-go"
 	"github.com/shredd0r/anki-card-creator/downloader"
 	"github.com/shredd0r/anki-card-creator/models"
+	"github.com/shredd0r/anki-card-creator/utils"
 )
 
-var errInvalidStatusCode = errors.New("invalid status code")
+var (
+	errInvalidStatusCode  = errors.New("invalid status code")
+	errUnsupportedSubject = errors.New("unsupported subject")
+)
 
 const (
 	base_url                             = "https://dictionary.cambridge.org"
@@ -24,7 +28,7 @@ const (
 	selector_for_explain_cambridge       = "div[class*='def ddef']"
 	selector_for_example_cambridge       = "div.examp.dexamp"
 	selector_for_transcription_cambridge = "span[class='pron dpron']"
-	selector_for_pronouns_cambridge      = "#audio2 > source:nth-child(3)"
+	selector_for_pronunciation_cambridge = "#audio2 > source:nth-child(3)"
 )
 
 type CambridgeCardExtractor interface {
@@ -94,22 +98,26 @@ func (e *implCambridgeCardExtractor) GetTransacription(ctx context.Context, subj
 func (e *implCambridgeCardExtractor) GetCard(ctx context.Context, subject string) (*models.CambridgeCard, error) {
 	e.logger.Debug(fmt.Sprintf("start get card for subject: %s", subject))
 
+	subjectType := utils.GetSubjectType(subject)
+	if subjectType != models.SubjectTypeWord {
+		e.logger.Error("unsupported subjet type for getting from cambridge dictionary")
+		return nil, errUnsupportedSubject
+	}
+
 	page, err := e.gotoSubjectPage(ctx, subject)
 	if err != nil {
 		return nil, err
 	}
 
 	mainPageLocator := page.Locator("html")
-	var pronouns *models.File
-	var errPronouns error
+	var pronunciation *models.File
+	var errPronunciation error
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		pronouns, errPronouns = e.getPronouns(ctx, mainPageLocator)
+		pronunciation, errPronunciation = e.getPronunciation(ctx, mainPageLocator)
 	}()
-
-	subjectType := e.getSubjectType(subject)
 
 	transcription, err := e.getTransacription(mainPageLocator)
 	if err != nil {
@@ -130,15 +138,14 @@ func (e *implCambridgeCardExtractor) GetCard(ctx context.Context, subject string
 	}
 
 	wg.Wait()
-	if errPronouns != nil {
+	if errPronunciation != nil {
 		return nil, err
 	}
 
 	return &models.CambridgeCard{
 		Subject:       subject,
-		SubjectType:   subjectType,
 		Transcription: transcription,
-		Pronouns:      pronouns,
+		Pronunciation: pronunciation,
 		Explains:      *explains,
 		Examples:      *examples,
 	}, nil
@@ -228,30 +235,30 @@ func (e *implCambridgeCardExtractor) getAllStringsBySelector(mainPageLocator pla
 	return &arrOfStr, nil
 }
 
-func (e *implCambridgeCardExtractor) getPronouns(ctx context.Context, mainPageLocator playwright.Locator) (*models.File, error) {
-	pronounsFileLocator := mainPageLocator.Locator(selector_for_pronouns_cambridge)
-	pronounsFilePath, err := pronounsFileLocator.GetAttribute("src")
+func (e *implCambridgeCardExtractor) getPronunciation(ctx context.Context, mainPageLocator playwright.Locator) (*models.File, error) {
+	pronunciationFileLocator := mainPageLocator.Locator(selector_for_pronunciation_cambridge)
+	pronunciationFilePath, err := pronunciationFileLocator.GetAttribute("src")
 	if err != nil {
-		e.logger.Error("failed get pronouns file from notes", slog.Any("err", err.Error()))
+		e.logger.Error("failed get pronunciation file from notes", slog.Any("err", err.Error()))
 		return nil, err
 	}
 
-	// Prononcations Audio files is placed on two ways:
+	// Pronunciation Audio files is placed on two ways:
 	// - amazon s3
 	// - cambridge dictionary servers
 	// If file is placed on cambridge dictionary servers, path from src doenst have protol and domain
-	var pronounsFileUrl string
-	if strings.Contains(pronounsFilePath, "https://s3") {
-		pronounsFileUrl = pronounsFilePath
+	var pronunciationFileUrl string
+	if strings.Contains(pronunciationFilePath, "https://s3") {
+		pronunciationFileUrl = pronunciationFilePath
 	} else {
-		pronounsFileUrl, err = url.JoinPath(base_url, pronounsFilePath)
+		pronunciationFileUrl, err = url.JoinPath(base_url, pronunciationFilePath)
 		if err != nil {
 			e.logger.Error("failed make url for download file", slog.Any("err", err.Error()))
 			return nil, err
 		}
 	}
 
-	return e.fileDownloader.Download(ctx, pronounsFileUrl)
+	return e.fileDownloader.Download(ctx, pronunciationFileUrl)
 }
 
 func (e *implCambridgeCardExtractor) getInnerTextFromChild(parentLocator playwright.Locator, selector string) (*string, error) {
@@ -262,11 +269,4 @@ func (e *implCambridgeCardExtractor) getInnerTextFromChild(parentLocator playwri
 		return nil, err
 	}
 	return &innerText, nil
-}
-
-func (e *implCambridgeCardExtractor) getSubjectType(subject string) models.SubjectType {
-	if strings.Contains(subject, " ") {
-		return models.SubjectTypePhrase
-	}
-	return models.SubjectTypeWord
 }
