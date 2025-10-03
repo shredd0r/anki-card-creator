@@ -1,7 +1,7 @@
 package services
 
 //go:generate mockgen -source anki.go -destination mock/anki_mock.go
-//go:generate mockgen -destination mock/ankiconnect/ankiconnect_mock.go github.com/atselvan/ankiconnect MediaManager,DecksManager,NotesManager
+//go:generate mockgen -destination mock/ankiconnect/ankiconnect_mock.go github.com/atselvan/ankiconnect MediaManager,DecksManager,NotesManager,ModelsManager
 
 import (
 	"context"
@@ -18,7 +18,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var errMoreThanOneType = errors.New("matched more than 1 content types")
+var (
+	errMoreThanOneType      = errors.New("matched more than 1 content types")
+	errCardAlreadyExist     = errors.New("card already exist")
+	errTemplateNameNotExist = errors.New("template name for card not exist")
+)
+
+const query_for_get_notes = `"subject:%s" "deck:%s"`
 
 type AnkiService interface {
 	StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error
@@ -38,9 +44,19 @@ func NewAnkiService(logger *slog.Logger, client *ankiconnect.Client) AnkiService
 	}
 }
 
-// TODO add checking if card already exist in deckname
 func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error {
-	err := s.createDeckIfItNotExist(flashcard.DeckName)
+	s.logger.Debug("start store new card")
+	err := s.isTemplateExist(templateName)
+	if err != nil {
+		return err
+	}
+
+	err = s.isCardAlreadyExist(flashcard)
+	if err != nil {
+		return err
+	}
+
+	err = s.createDeckIfItNotExist(flashcard.DeckName)
 	if err != nil {
 		return nil
 	}
@@ -141,6 +157,39 @@ func (s *implAnkiService) encodeMediaContent(mediafile *models.File) (*string, e
 	s.logger.Debug("start encode media content")
 	encodedMediaContent := base64.StdEncoding.EncodeToString(mediafile.Content)
 	return &encodedMediaContent, nil
+}
+
+func (s *implAnkiService) isTemplateExist(templateName string) error {
+	s.logger.Debug("check if template exist")
+	_, restErr := s.client.Models.GetFields(templateName)
+	if restErr != nil {
+		// If models not found, server return error with message:
+		// "model was not found: 'name-of-model'"
+		if strings.Contains(restErr.Message, templateName) {
+			s.logger.Debug("template note exist", slog.Any("templateName", templateName))
+			return errTemplateNameNotExist
+		}
+		return errors.New(restErr.Message)
+	}
+	return nil
+}
+
+func (s *implAnkiService) isCardAlreadyExist(flashcard *models.Flashcard) error {
+	s.logger.Debug("check if card already exist")
+	resp, restErr := s.client.Notes.Get(fmt.Sprintf(query_for_get_notes, flashcard.Subject, flashcard.DeckName))
+
+	if restErr != nil {
+		s.logger.Error("failed get card from anki", slog.Any("err", restErr.Message))
+		return errors.New(restErr.Message)
+	}
+
+	for _, r := range *resp {
+		if strings.Compare(r.Fields["Subject"].Value, flashcard.Subject) == 0 {
+			s.logger.Debug("card already exist", slog.Any("subject", flashcard.Subject))
+			return errCardAlreadyExist
+		}
+	}
+	return nil
 }
 
 func (s *implAnkiService) createDeckIfItNotExist(deckname string) error {

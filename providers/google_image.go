@@ -16,6 +16,7 @@ const (
 	main_page                      = "https://www.google.com/imghp?hl=en"
 	selector_for_matched_image     = "img[style*='object-position']"
 	selector_for_detail_view_image = "a[role='link'] > img[jsaction='']:first-child"
+	selector_for_button_search     = "div[jsname] > center > input[value='Google Search']"
 )
 
 var errIndexOutOfRange = errors.New("index out of range")
@@ -43,6 +44,13 @@ type implGoogleImageProvider struct {
 // searchQuery - query for searching pictures
 func (p *implGoogleImageProvider) Get(ctx context.Context, numOfPicture uint, searchQuery string) (*models.File, error) {
 	page, err := p.moveToPageWithImages(searchQuery)
+	defer func() {
+		err := page.Close()
+		if err != nil {
+			p.logger.Error("failed close page with google image site", slog.Any("err", err.Error()))
+		}
+
+	}()
 	if err != nil {
 		return nil, err
 	}
@@ -102,14 +110,8 @@ func (p *implGoogleImageProvider) moveToPageWithImages(search string) (playwrigh
 		return nil, err
 	}
 
-	// This css selector returned 2 input, where needed input is second
-	inputLocators, err := page.Locator("input[value='Google Search']").All()
-	if err != nil {
-		p.logger.Error("failed get input from page", slog.Any("err", err.Error()))
-		return nil, err
-	}
-
-	err = inputLocators[1].Click()
+	inputLocator := page.Locator(selector_for_button_search)
+	err = inputLocator.Click()
 	if err != nil {
 		p.logger.Error("failed click 'Google Search'", slog.Any("err", err.Error()))
 		return nil, err

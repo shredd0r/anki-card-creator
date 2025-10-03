@@ -1,5 +1,7 @@
 package providers
 
+//go:generate mockgen -source gemini.go -destination mock/gemini_mock.go
+
 import (
 	"context"
 	"encoding/json"
@@ -167,7 +169,7 @@ func (p *implGeminiProvider) RatingPicture(ctx context.Context, subject string, 
 }
 
 func (p *implGeminiProvider) wrapError(err error) error {
-	apiErr := err.(*genai.APIError)
+	apiErr := err.(genai.APIError)
 
 	switch apiErr.Code {
 	case http.StatusServiceUnavailable:
