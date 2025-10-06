@@ -1,4 +1,4 @@
-package card
+package fetchers
 
 //go:generate mockgen -source fetcher_factory.go -destination mock/fetcher_factory_mock.go
 

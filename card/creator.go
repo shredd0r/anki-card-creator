@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/shredd0r/anki-card-creator/card/fetchers"
 	"github.com/shredd0r/anki-card-creator/config"
 	"github.com/shredd0r/anki-card-creator/models"
 	"github.com/shredd0r/anki-card-creator/providers"
@@ -23,13 +24,13 @@ type implFlashcardCreator struct {
 	logger                       *slog.Logger
 	geminiProvider               providers.GeminiProvider
 	googleImageProvider          providers.GoogleImageProvider
-	fieldComponentFetcherFactory FieldComponentFetcherFactory
+	fieldComponentFetcherFactory fetchers.FieldComponentFetcherFactory
 }
 
 func NewFlashcardCreator(ratingCfg config.RatingConfig, logger *slog.Logger,
 	geminiProvider providers.GeminiProvider,
 	googleImageProvider providers.GoogleImageProvider,
-	fieldComponentFetcherFactory FieldComponentFetcherFactory) FlashcardCreator {
+	fieldComponentFetcherFactory fetchers.FieldComponentFetcherFactory) FlashcardCreator {
 	return &implFlashcardCreator{
 		ratingCfg:                    ratingCfg,
 		logger:                       logger.WithGroup("flashcard-creator"),
@@ -40,7 +41,8 @@ func NewFlashcardCreator(ratingCfg config.RatingConfig, logger *slog.Logger,
 }
 
 func (c *implFlashcardCreator) Create(ctx context.Context, subject string, deck string) (*models.Flashcard, error) {
-	fieldComponentFetcher, err := c.fieldComponentFetcherFactory.Get(utils.GetSubjectType(subject))
+	subjectType := utils.GetSubjectType(subject)
+	fieldComponentFetcher, err := c.fieldComponentFetcherFactory.Get(subjectType)
 	if err != nil {
 		return nil, err
 	}
@@ -48,11 +50,12 @@ func (c *implFlashcardCreator) Create(ctx context.Context, subject string, deck 
 	return c.create(ctx, fieldComponentFetcher, subject, deck)
 }
 
-func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher FieldComponentFetcher, subject string, deck string) (*models.Flashcard, error) {
+func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher fetchers.FieldComponentFetcher, subject string, deck string) (*models.Flashcard, error) {
 	c.logger.Debug("start create flashcard", slog.Any("subject", subject))
 
 	errg := errgroup.Group{}
 
+	subjectType := fieldComponentFetcher.GetSubjectType()
 	chanForExplain := make(chan *string, 1)
 	chanForExamples := make(chan *[]string, 1)
 	chanForTranscription := make(chan *string, 1)
@@ -88,7 +91,7 @@ func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher
 	})
 
 	errg.Go(func() error {
-		picture, err := c.getPicture(ctx, subject)
+		picture, err := c.getPicture(ctx, subject, subjectType)
 		chanForPicture <- picture
 		c.logger.Debug("done get picture, put it to channel")
 		return err
@@ -102,7 +105,7 @@ func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher
 
 	return &models.Flashcard{
 		Subject:       subject,
-		SubjectType:   fieldComponentFetcher.GetSubjectType(),
+		SubjectType:   subjectType,
 		DeckName:      deck,
 		Transcription: <-chanForTranscription,
 		Pronunciation: <-chanForPronunciation,
@@ -114,7 +117,12 @@ func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher
 
 // Method for rating pictures gotten from google image
 // If all attempts images don't match, creating card continue without picture
-func (c *implFlashcardCreator) getPicture(ctx context.Context, subject string) (*models.File, error) {
+func (c *implFlashcardCreator) getPicture(ctx context.Context, subject string, subjectType models.SubjectType) (*models.File, error) {
+	if subjectType == models.SubjectTypePhrase {
+		c.logger.Debug("picture for phrase is not searching, skip", slog.Any("subject", subject))
+		return nil, nil
+	}
+
 	for attempt := range c.ratingCfg.NumberOfAttemptRatingPicture {
 		c.logger.Debug(fmt.Sprintf("attempt: %d for getting picture for subject: %s", attempt, subject))
 		picture, err := c.googleImageProvider.Get(ctx, attempt, subject)

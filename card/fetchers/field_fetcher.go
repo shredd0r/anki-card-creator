@@ -1,4 +1,4 @@
-package card
+package fetchers
 
 //go:generate mockgen -source field_fetcher.go -destination mock/field_fetcher_mock.go
 
@@ -21,7 +21,7 @@ type FieldComponentFetcher interface {
 	GetPronunciation(ctx context.Context, subject string) (*models.File, error)
 }
 
-// wordFieldComponentFetcher has
+// wordFieldComponentFetcher has methods for get volumes for flashcard for word
 type wordFieldComponentFetcher struct {
 	logger             *slog.Logger
 	geminiProvider     providers.GeminiProvider
@@ -40,7 +40,7 @@ func NewWordFieldComponentFetcher(logger *slog.Logger, geminiProvider providers.
 }
 
 func (wf *wordFieldComponentFetcher) GetSubjectType() models.SubjectType {
-	return models.SubjectTypePhrase
+	return models.SubjectTypeWord
 }
 func (wf *wordFieldComponentFetcher) GetTranscription(ctx context.Context, subject string) (*string, error) {
 	wf.logger.Debug("start get transcription for word", slog.Any("word", subject))
@@ -52,8 +52,6 @@ func (wf *wordFieldComponentFetcher) GetTranscription(ctx context.Context, subje
 	return cambridgeCard.Transcription, nil
 }
 
-// In some cases, Cambridge dictionary doenst have example of using word
-// That's why this check is neccessary
 func (wf *wordFieldComponentFetcher) GetExplain(ctx context.Context, subject string) (*string, error) {
 	wf.logger.Debug("start get explain for word", slog.Any("word", subject))
 
@@ -64,6 +62,9 @@ func (wf *wordFieldComponentFetcher) GetExplain(ctx context.Context, subject str
 
 	return &cambridgeCard.Explains[0], nil
 }
+
+// In some cases, Cambridge dictionary doenst have example of using word
+// That's why this check is neccessary
 func (wf *wordFieldComponentFetcher) GetExamples(ctx context.Context, subject string) (*[]string, error) {
 	wf.logger.Debug("start get examples for word", slog.Any("word", subject))
 
