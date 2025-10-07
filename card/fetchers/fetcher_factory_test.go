@@ -9,14 +9,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type positiveCase struct {
+type factoryPositiveCase struct {
 	Name         string
 	SubjectType  models.SubjectType
 	ExpectedType string
 }
 
 func TestPositiveTests(t *testing.T) {
-	testcases := []positiveCase{
+	testcases := []factoryPositiveCase{
 		{
 			Name:         "get field fetcher for word",
 			SubjectType:  models.SubjectTypeWord,
