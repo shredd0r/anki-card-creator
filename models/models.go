@@ -17,9 +17,8 @@ const (
 )
 
 type Target struct {
-	Subject     string
-	SubjectType SubjectType
-	DeckName    string
+	DeckName string   `json:"deckname"`
+	Subjects []string `json:"subjects"`
 }
 
 type File struct {
@@ -38,26 +37,10 @@ type Flashcard struct {
 	Examples      []string
 }
 
-type NotesCard struct {
-	Subject     string
-	SubjectType SubjectType
-	LessonName  string
-	Pronouns    *File // Can be nil, if subject is phrase
-	Explain     string
-}
-
 type CambridgeCard struct {
 	Subject       string
 	Pronunciation *File   // Can be nil, if subject is phrase
 	Transcription *string //
 	Explains      []string
 	Examples      []string
-}
-
-type QuizletCard struct {
-	Subject     string
-	SubjectType SubjectType
-	Pronouns    *File
-	Explain     string
-	Picture     *File
 }

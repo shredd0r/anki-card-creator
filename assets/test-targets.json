@@ -1,0 +1,15 @@
+[
+    {
+        "deckname": "deckname-1",
+        "subjects": [
+            "word-subject",
+            "phrase subject"
+        ]
+    },
+    {
+        "deckname": "deckname-2",
+        "subjects": [
+            "word-subject"
+        ]
+    }
+]
