@@ -18,8 +18,12 @@ func TestPositiveGetFile(t *testing.T) {
 		Times(1).
 		Return(nil, nil)
 
-	_, err := googleImageProvider.Get(t.Context(), 0, "test")
+	p, err := googleImageProvider.NewQuery(t.Context(), "test")
 	assert.Nil(t, err, "provider return some errors")
+
+	_, err = p.Get(t.Context(), 0)
+	assert.Nil(t, err, "query provider return some errors")
+
 }
 
 func TestNegativeIndexOutOfRange(t *testing.T) {
@@ -29,7 +33,10 @@ func TestNegativeIndexOutOfRange(t *testing.T) {
 		Download(gomock.Any(), gomock.All()).
 		Times(0)
 
-	_, err := googleImageProvider.Get(t.Context(), 999999, "test")
+	p, err := googleImageProvider.NewQuery(t.Context(), "test")
+	assert.Nil(t, err, "provider return some errors")
+
+	_, err = p.Get(t.Context(), 9999999)
 	assert.NotNil(t, err, "provider didn't return error")
 	assert.ErrorIs(t, err, errIndexOutOfRange)
 

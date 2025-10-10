@@ -20,19 +20,19 @@ type FlashcardCreator interface {
 }
 
 type implFlashcardCreator struct {
-	ratingCfg                    config.RatingConfig
+	pictureCfg                   config.PictureConfig
 	logger                       *slog.Logger
 	geminiProvider               providers.GeminiProvider
 	googleImageProvider          providers.GoogleImageProvider
 	fieldComponentFetcherFactory fetchers.FieldComponentFetcherFactory
 }
 
-func NewFlashcardCreator(ratingCfg config.RatingConfig, logger *slog.Logger,
+func NewFlashcardCreator(pictureCfg config.PictureConfig, logger *slog.Logger,
 	geminiProvider providers.GeminiProvider,
 	googleImageProvider providers.GoogleImageProvider,
 	fieldComponentFetcherFactory fetchers.FieldComponentFetcherFactory) FlashcardCreator {
 	return &implFlashcardCreator{
-		ratingCfg:                    ratingCfg,
+		pictureCfg:                   pictureCfg,
 		logger:                       logger.WithGroup("flashcard-creator"),
 		googleImageProvider:          googleImageProvider,
 		geminiProvider:               geminiProvider,
@@ -123,12 +123,24 @@ func (c *implFlashcardCreator) getPicture(ctx context.Context, subject string, s
 		return nil, nil
 	}
 
-	for attempt := range c.ratingCfg.NumberOfAttemptRatingPicture {
+	queryPageProvider, err := c.googleImageProvider.NewQuery(ctx, subject)
+	if err != nil {
+		return nil, err
+	}
+
+	for attempt := range c.pictureCfg.NumberOfAttemptRatingPicture {
 		c.logger.Debug(fmt.Sprintf("attempt: %d for getting picture for subject: %s", attempt, subject))
-		picture, err := c.googleImageProvider.Get(ctx, attempt, subject)
+
+		picture, err := queryPageProvider.Get(ctx, attempt)
 		if err != nil {
 			c.logger.Error("failed get picture for subject", slog.Any("subject", subject), slog.Any("attempt", attempt))
 			return nil, err
+		}
+
+		// skip picture with mimetype svg, because this type not supported gemini server
+		if picture.MIMEType == "image/svg+xml" {
+			c.logger.Debug("skip image with type svg")
+			continue
 		}
 
 		rating, err := c.geminiProvider.RatingPicture(ctx, subject, picture)
@@ -137,7 +149,7 @@ func (c *implFlashcardCreator) getPicture(ctx context.Context, subject string, s
 			return nil, err
 		}
 
-		if *rating >= c.ratingCfg.MinimalRating {
+		if *rating >= c.pictureCfg.MinimalRating {
 			c.logger.Debug(fmt.Sprintf("found suitable picture for subject: %s", subject))
 			return picture, nil
 		}

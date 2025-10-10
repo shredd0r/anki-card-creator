@@ -13,16 +13,23 @@ import (
 )
 
 const (
-	main_page                      = "https://www.google.com/imghp?hl=en"
-	selector_for_matched_image     = "img[style*='object-position']"
-	selector_for_detail_view_image = "a[role='link'] > img[jsaction='']:first-child"
-	selector_for_button_search     = "div[jsname] > center > input[value='Google Search']"
+	main_page                                     = "https://www.google.com/imghp?hl=en"
+	selector_for_matched_image                    = "img[style*='object-position']"
+	selector_for_detail_view_image                = "a[role='link'] > img[jsaction]:first-child"
+	selector_for_detail_view_image_for_some_cases = "a[role='link'] > img[jsname]:first-child"
+	selector_for_button_search                    = "div[jsname] > center > input[value='Google Search']"
 )
 
 var errIndexOutOfRange = errors.New("index out of range")
 
 type GoogleImageProvider interface {
-	Get(ctx context.Context, numOfPicture uint, searchQuery string) (*models.File, error)
+	// Return struct where you can sort through images on page
+	NewQuery(ctx context.Context, searchQuery string) (GoogleImageQueryProvider, error)
+}
+
+type GoogleImageQueryProvider interface {
+	// Return image from opened web page
+	Get(ctx context.Context, numOfPicture uint) (*models.File, error)
 }
 
 func NewGoogleImageProvider(logger *slog.Logger, browser playwright.Browser, fileDownloader downloader.FileDownloader) GoogleImageProvider {
@@ -39,30 +46,44 @@ type implGoogleImageProvider struct {
 	fileDownloader downloader.FileDownloader
 }
 
+type implGoogleImageQueryProvider struct {
+	logger         *slog.Logger
+	page           playwright.Page
+	fileDownloader downloader.FileDownloader
+}
+
+func (p *implGoogleImageProvider) NewQuery(ctx context.Context, searchQuery string) (GoogleImageQueryProvider, error) {
+	page, err := p.moveToPageWithImages(searchQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	return &implGoogleImageQueryProvider{
+		logger:         p.logger,
+		page:           page,
+		fileDownloader: p.fileDownloader,
+	}, nil
+}
+
 // Get - method for getting picture from Google Image. Picture returns as buffer reader, not saving in disk
 // numOfPicture - index for getting picture from list of matched pictures
 // searchQuery - query for searching pictures
-func (p *implGoogleImageProvider) Get(ctx context.Context, numOfPicture uint, searchQuery string) (*models.File, error) {
-	page, err := p.moveToPageWithImages(searchQuery)
+func (p *implGoogleImageQueryProvider) Get(ctx context.Context, numOfPicture uint) (*models.File, error) {
 	defer func() {
-		err := page.Close()
+		err := p.page.Close()
 		if err != nil {
 			p.logger.Error("failed close page with google image site", slog.Any("err", err.Error()))
 		}
 
 	}()
-	if err != nil {
-		return nil, err
-	}
-
 	// Waiting for when loading all matched pictures on page
-	err = page.Locator(selector_for_matched_image).First().WaitFor()
+	err := p.page.Locator(selector_for_matched_image).First().WaitFor()
 	if err != nil {
 		p.logger.Error("failed wait for loading images on page or no one image is matched", slog.Any("err", err.Error()))
 		return nil, err
 	}
 
-	matchedImgLocators, err := page.Locator(selector_for_matched_image).All()
+	matchedImgLocators, err := p.page.Locator(selector_for_matched_image).All()
 	if err != nil {
 		p.logger.Error("failed get images from google page", slog.Any("err", err.Error()))
 		return nil, err
@@ -81,11 +102,19 @@ func (p *implGoogleImageProvider) Get(ctx context.Context, numOfPicture uint, se
 		return nil, err
 	}
 
-	imgViewLocator := page.Locator(selector_for_detail_view_image)
-	imgUrl, err := imgViewLocator.GetAttribute("src")
+	var imgUrl string
+	imgUrl, err = p.getUrlToImage(p.page, selector_for_detail_view_image)
 	if err != nil {
-		p.logger.Error("failed get url to image from image view locator", slog.Any("err", err.Error()))
-		return nil, err
+		// In some cases, css selector 'selector_for_detail_view_image' doesn't return detail view image
+		// If returned timeout err, workflow will try get url using another selector
+		if errors.Is(err, playwright.ErrTimeout) {
+			imgUrl, err = p.getUrlToImage(p.page, selector_for_detail_view_image_for_some_cases)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
 
 	return p.fileDownloader.Download(ctx, imgUrl)
@@ -118,4 +147,15 @@ func (p *implGoogleImageProvider) moveToPageWithImages(search string) (playwrigh
 	}
 
 	return page, nil
+}
+
+func (p *implGoogleImageQueryProvider) getUrlToImage(page playwright.Page, selectorToDetailView string) (string, error) {
+	imgViewLocator := page.Locator(selectorToDetailView).First()
+	imgUrl, err := imgViewLocator.GetAttribute("src")
+	if err != nil {
+		p.logger.Error("failed get url to image from image view locator", slog.Any("err", err.Error()))
+		return "", err
+	}
+
+	return imgUrl, nil
 }

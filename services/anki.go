@@ -28,6 +28,7 @@ const query_for_get_notes = `"subject:%s" "deck:%s"`
 
 type AnkiService interface {
 	StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error
+	IsCardAlreadyExist(ctx context.Context, subject string, deckname string) (bool, error)
 }
 
 type implAnkiService struct {
@@ -51,9 +52,12 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string,
 		return err
 	}
 
-	err = s.isCardAlreadyExist(flashcard)
+	isExist, err := s.IsCardAlreadyExist(ctx, flashcard.Subject, flashcard.DeckName)
 	if err != nil {
 		return err
+	}
+	if isExist {
+		return errCardAlreadyExist
 	}
 
 	err = s.createDeckIfItNotExist(flashcard.DeckName)
@@ -81,7 +85,7 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string,
 			if err != nil {
 				return err
 			}
-			ankiCardFields["Picture"] = filename
+			ankiCardFields["Picture"] = s.formatPictureField(filename)
 			return nil
 		})
 
@@ -117,6 +121,37 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string,
 	}
 
 	return nil
+}
+
+func (s *implAnkiService) IsCardAlreadyExist(ctx context.Context, subject string, deckname string) (bool, error) {
+	select {
+	case <-ctx.Done():
+		{
+			s.logger.Debug("context is done, returning from IsCardAlreadyExist")
+			return false, ctx.Err()
+		}
+	default:
+		{
+			s.logger.Debug("check if card already exist")
+			query := fmt.Sprintf(query_for_get_notes, subject, deckname)
+			resp, restErr := s.client.Notes.Get(query)
+
+			if restErr != nil {
+				s.logger.Error("failed get note from anki", slog.Any("err", restErr.Message))
+				s.logger.Error("query for get note ", slog.Any("query", query))
+				return false, errors.New(restErr.Message)
+			}
+
+			for _, r := range *resp {
+				if strings.Compare(r.Fields["Subject"].Value, subject) == 0 {
+					s.logger.Debug("card already exist", slog.Any("subject", subject))
+					return true, nil
+				}
+			}
+			return false, nil
+		}
+	}
+
 }
 
 func (s *implAnkiService) storeMediafile(ctx context.Context, filename string, mediafile *models.File) error {
@@ -170,24 +205,6 @@ func (s *implAnkiService) isTemplateExist(templateName string) error {
 			return errTemplateNameNotExist
 		}
 		return errors.New(restErr.Message)
-	}
-	return nil
-}
-
-func (s *implAnkiService) isCardAlreadyExist(flashcard *models.Flashcard) error {
-	s.logger.Debug("check if card already exist")
-	resp, restErr := s.client.Notes.Get(fmt.Sprintf(query_for_get_notes, flashcard.Subject, flashcard.DeckName))
-
-	if restErr != nil {
-		s.logger.Error("failed get card from anki", slog.Any("err", restErr.Message))
-		return errors.New(restErr.Message)
-	}
-
-	for _, r := range *resp {
-		if strings.Compare(r.Fields["Subject"].Value, flashcard.Subject) == 0 {
-			s.logger.Debug("card already exist", slog.Any("subject", flashcard.Subject))
-			return errCardAlreadyExist
-		}
 	}
 	return nil
 }
@@ -279,4 +296,8 @@ func (s *implAnkiService) formatExampleField(flashcard *models.Flashcard) string
 	s.logger.Debug("examples: ", slog.String("example", examples))
 
 	return fmt.Sprintf(formatExamples, examples)
+}
+
+func (s *implAnkiService) formatPictureField(filename string) string {
+	return fmt.Sprintf("<img src='%s'>", filename)
 }

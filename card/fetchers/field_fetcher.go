@@ -45,11 +45,21 @@ func (wf *wordFieldComponentFetcher) GetSubjectType() models.SubjectType {
 func (wf *wordFieldComponentFetcher) GetTranscription(ctx context.Context, subject string) (*string, error) {
 	wf.logger.Debug("start get transcription for word", slog.Any("word", subject))
 
-	cambridgeCard, err := wf.fetchCambridgeCard(ctx, subject)
-	if err != nil {
-		return nil, err
+	select {
+	case <-ctx.Done():
+		{
+			wf.logger.Debug("context is done, returning from GetTranscription")
+			return nil, ctx.Err()
+		}
+	default:
+		{
+			cambridgeCard, err := wf.fetchCambridgeCard(ctx, subject)
+			if err != nil {
+				return nil, err
+			}
+			return cambridgeCard.Transcription, nil
+		}
 	}
-	return cambridgeCard.Transcription, nil
 }
 
 func (wf *wordFieldComponentFetcher) GetExplain(ctx context.Context, subject string) (*string, error) {
@@ -96,18 +106,31 @@ func (wf *wordFieldComponentFetcher) GetPronunciation(ctx context.Context, subje
 }
 
 func (wf *wordFieldComponentFetcher) fetchCambridgeCard(ctx context.Context, subject string) (*models.CambridgeCard, error) {
-	wf.mu.Lock()
-	defer wf.mu.Unlock()
-
-	if wf._cambridgeCard == nil {
-		newCambridgeCard, err := wf.cambridgeExtractor.GetCard(ctx, subject)
-		if err != nil {
-			return nil, err
+	select {
+	case <-ctx.Done():
+		{
+			wf.logger.Debug("context is done, returning from fetchCambridgeCard")
+			return nil, ctx.Err()
 		}
-		wf._cambridgeCard = newCambridgeCard
+	default:
+		{
+			wf.mu.Lock()
+			wf.logger.Debug("call fetchCambridgeCard")
+			defer wf.mu.Unlock()
+
+			if wf._cambridgeCard == nil {
+				wf.logger.Debug("get card from cambridge")
+				newCambridgeCard, err := wf.cambridgeExtractor.GetCard(ctx, subject)
+				if err != nil {
+					return nil, err
+				}
+				wf._cambridgeCard = newCambridgeCard
+			}
+
+			return wf._cambridgeCard, nil
+		}
 	}
 
-	return wf._cambridgeCard, nil
 }
 
 type phraseFieldComponentFetcher struct {

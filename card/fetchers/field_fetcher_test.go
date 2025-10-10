@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/shredd0r/anki-card-creator/extractors"
@@ -38,6 +39,7 @@ type fieldFetcherPositiveCase struct {
 }
 
 func TestPostiveCases(t *testing.T) {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
 	logger := slog.Default()
 	ctrl := gomock.NewController(t)
 
@@ -94,22 +96,37 @@ func TestPostiveCases(t *testing.T) {
 
 			fieldComponentFetcher := testcase.InitFieldComponentFetcherForTest(logger, ce, gp)
 
-			actualExamples, err := fieldComponentFetcher.GetExamples(t.Context(), testcase.Subject)
-			assert.Nil(t, err)
-			assert.Equal(t, testcase.ExpectedFieldVolumes.Examples, *actualExamples)
+			wg := sync.WaitGroup{}
+			wg.Add(4)
+			go func() {
+				defer wg.Done()
+				actualExamples, err := fieldComponentFetcher.GetExamples(t.Context(), testcase.Subject)
+				assert.Nil(t, err)
+				assert.Equal(t, testcase.ExpectedFieldVolumes.Examples, *actualExamples)
+			}()
 
-			actualExplain, err := fieldComponentFetcher.GetExplain(t.Context(), testcase.Subject)
-			assert.Nil(t, err)
-			assert.Equal(t, testcase.ExpectedFieldVolumes.Explain, *actualExplain)
+			go func() {
+				defer wg.Done()
+				actualExplain, err := fieldComponentFetcher.GetExplain(t.Context(), testcase.Subject)
+				assert.Nil(t, err)
+				assert.Equal(t, testcase.ExpectedFieldVolumes.Explain, *actualExplain)
+			}()
 
-			actualTranscription, err := fieldComponentFetcher.GetTranscription(t.Context(), testcase.Subject)
-			assert.Nil(t, err)
-			assert.Equal(t, testcase.ExpectedFieldVolumes.Transcription, actualTranscription)
+			go func() {
+				defer wg.Done()
+				actualTranscription, err := fieldComponentFetcher.GetTranscription(t.Context(), testcase.Subject)
+				assert.Nil(t, err)
+				assert.Equal(t, testcase.ExpectedFieldVolumes.Transcription, actualTranscription)
+			}()
 
-			actualPronunciation, err := fieldComponentFetcher.GetPronunciation(t.Context(), testcase.Subject)
-			assert.Nil(t, err)
-			assert.Equal(t, testcase.ExpectedFieldVolumes.Pronunciation, actualPronunciation)
+			go func() {
+				defer wg.Done()
+				actualPronunciation, err := fieldComponentFetcher.GetPronunciation(t.Context(), testcase.Subject)
+				assert.Nil(t, err)
+				assert.Equal(t, testcase.ExpectedFieldVolumes.Pronunciation, actualPronunciation)
+			}()
 
+			wg.Wait()
 			actualSubjectType := fieldComponentFetcher.GetSubjectType()
 			assert.Equal(t, testcase.ExpectedFieldVolumes.SubjectType, actualSubjectType)
 		})

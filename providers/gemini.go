@@ -56,7 +56,7 @@ func NewGeminiProvider(logger *slog.Logger, client *genai.Client) GeminiProvider
 				Type: genai.TypeString,
 			},
 			SystemInstruction: genai.NewContentFromText(
-				`I will send you word or phrase or idiom, you should write explain this word. Answer could be only 1 sentence, concise, for low level of English proficiency`,
+				`I will send you word or phrase or idiom, you should write explain this word. Answer could be only 1 sentence, concise, without using this word, phrase, idiom. for low level of English proficiency`,
 				genai.RoleUser),
 		},
 		cfgForRatingPicture: &genai.GenerateContentConfig{
@@ -176,7 +176,7 @@ func (p *implGeminiProvider) wrapError(err error) error {
 		{
 			return errServerIsOverload
 		}
-	case http.StatusForbidden:
+	case http.StatusTooManyRequests:
 		{
 			return errQuotaIsOver
 		}

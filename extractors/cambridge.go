@@ -20,11 +20,12 @@ import (
 var (
 	errInvalidStatusCode  = errors.New("invalid status code")
 	errUnsupportedSubject = errors.New("unsupported subject")
+	errSubjectNotFound    = errors.New("subject not found")
 )
 
 const (
 	base_url                             = "https://dictionary.cambridge.org"
-	dictionary_url_page                  = "https://dictionary.cambridge.org/dictionary/english"
+	home_url_page                        = "https://dictionary.cambridge.org/dictionary/english/"
 	selector_for_explain_cambridge       = "div[class*='def ddef']"
 	selector_for_example_cambridge       = "div.examp.dexamp"
 	selector_for_transcription_cambridge = "span[class='pron dpron']"
@@ -68,7 +69,7 @@ func (e *implCambridgeCardExtractor) GetExplains(ctx context.Context, subject st
 			}
 
 			mainPageLocator := page.Locator("html")
-			return e.getExplains(mainPageLocator)
+			return e.getExplains(ctx, mainPageLocator)
 		}
 	}
 }
@@ -90,7 +91,7 @@ func (e *implCambridgeCardExtractor) GetTransacription(ctx context.Context, subj
 			}
 
 			mainPageLocator := page.Locator("html")
-			return e.getTransacription(mainPageLocator)
+			return e.getTransacription(ctx, mainPageLocator)
 		}
 	}
 }
@@ -119,19 +120,19 @@ func (e *implCambridgeCardExtractor) GetCard(ctx context.Context, subject string
 		pronunciation, errPronunciation = e.getPronunciation(ctx, mainPageLocator)
 	}()
 
-	transcription, err := e.getTransacription(mainPageLocator)
+	transcription, err := e.getTransacription(ctx, mainPageLocator)
 	if err != nil {
 		e.logger.Error("failed get transcription from parent locator", slog.Any("err", err.Error()))
 		return nil, err
 	}
 
-	explains, err := e.getExplains(mainPageLocator)
+	explains, err := e.getExplains(ctx, mainPageLocator)
 	if err != nil {
 		e.logger.Error("failed get explains from parent locator", slog.Any("err", err.Error()))
 		return nil, err
 	}
 
-	examples, err := e.getExamples(mainPageLocator)
+	examples, err := e.getExamples(ctx, mainPageLocator)
 	if err != nil {
 		e.logger.Error("failed get examples from parent locator", slog.Any("err", err.Error()))
 		return nil, err
@@ -167,72 +168,122 @@ func (e *implCambridgeCardExtractor) gotoSubjectPage(ctx context.Context, subjec
 				return nil, err
 			}
 
-			subjectUrl, err := url.JoinPath(dictionary_url_page, subject)
+			subjectUrl, err := url.JoinPath(home_url_page, subject)
 			if err != nil {
 				e.logger.Error("failed join subjec to dictionary url", slog.Any("err", err.Error()))
 				return nil, err
 			}
-			response, err := page.Goto(subjectUrl)
-			if err != nil {
-				e.logger.Error("failed go to subject page", slog.Any("err", err.Error()))
-				return nil, err
+
+			select {
+			case <-ctx.Done():
+				{
+					e.logger.Debug("context is done, leaving from 'gotoSubjectPage'")
+					return nil, ctx.Err()
+				}
+			default:
+				{
+					response, err := page.Goto(subjectUrl)
+					if err != nil {
+						e.logger.Error("failed go to subject page", slog.Any("err", err.Error()))
+						return nil, err
+					}
+					if !response.Ok() {
+						e.logger.Error("call subject url return invalid http status code, stopped")
+						return nil, errInvalidStatusCode
+					}
+					// If subject not exist in dictionary,
+					// User will redirected to homepage
+					e.logger.Debug("current url to page", slog.Any("url", page.URL()))
+					if strings.Compare(page.URL(), home_url_page) == 0 {
+						e.logger.Error("subject not found in cambridge dictionary")
+						return nil, errSubjectNotFound
+					}
+					return page, nil
+				}
 			}
-			if !response.Ok() {
-				e.logger.Error("call subject url return invalid http status code, stopped")
-				return nil, errInvalidStatusCode
-			}
-			return page, nil
 		}
 	}
 }
 
-func (e *implCambridgeCardExtractor) getTransacription(mainPageLocator playwright.Locator) (*string, error) {
+func (e *implCambridgeCardExtractor) getTransacription(ctx context.Context, mainPageLocator playwright.Locator) (*string, error) {
 	e.logger.Debug("start get transcription from cambridge page")
-	transcription, err := e.getInnerTextFromChild(mainPageLocator, selector_for_transcription_cambridge)
-	if err != nil {
-		e.logger.Error("failed get transcriptinf from parent locator", slog.Any("err", err.Error()))
-		return nil, err
+	select {
+	case <-ctx.Done():
+		{
+			e.logger.Debug("context is done, returning from getTranscription")
+			return nil, ctx.Err()
+		}
+	default:
+		{
+			transcription, err := e.getInnerTextFromChild(mainPageLocator, selector_for_transcription_cambridge)
+			if err != nil {
+				e.logger.Error("failed get transcriptinf from parent locator", slog.Any("err", err.Error()))
+				return nil, err
+			}
+
+			return transcription, nil
+		}
 	}
-
-	return transcription, nil
 }
 
-func (e *implCambridgeCardExtractor) getExplains(mainPageLocator playwright.Locator) (*[]string, error) {
+func (e *implCambridgeCardExtractor) getExplains(ctx context.Context, mainPageLocator playwright.Locator) (*[]string, error) {
 	e.logger.Debug("start get explains from cambridge page")
-	return e.getAllStringsBySelector(mainPageLocator, selector_for_explain_cambridge, 3)
+	return e.getAllStringsBySelector(ctx, mainPageLocator, selector_for_explain_cambridge, 3)
 }
 
-func (e *implCambridgeCardExtractor) getExamples(mainPageLocator playwright.Locator) (*[]string, error) {
+func (e *implCambridgeCardExtractor) getExamples(ctx context.Context, mainPageLocator playwright.Locator) (*[]string, error) {
 	e.logger.Debug("start get examples from cambridge page")
-	return e.getAllStringsBySelector(mainPageLocator, selector_for_example_cambridge, 5)
+	return e.getAllStringsBySelector(ctx, mainPageLocator, selector_for_example_cambridge, 5)
 }
 
 // getAllStringsBySelector return all inner text from found locators by selector
-func (e *implCambridgeCardExtractor) getAllStringsBySelector(mainPageLocator playwright.Locator, selector string, maxCount uint8) (*[]string, error) {
-	stringLocators, err := mainPageLocator.Locator(selector).All()
-	if err != nil {
-		e.logger.Error("failed get locators from main page", slog.Any("err", err.Error()))
-		return nil, err
-	}
-
-	countOfStrings := maxCount
-
-	if len(stringLocators) < int(maxCount) {
-		countOfStrings = uint8(len(stringLocators))
-	}
-
-	arrOfStr := make([]string, countOfStrings)
-
-	for index := range countOfStrings {
-		str, err := stringLocators[index].InnerText()
-		if err != nil {
-			e.logger.Error("failed get from parent locator", slog.Any("err", err.Error()))
-			return nil, err
+func (e *implCambridgeCardExtractor) getAllStringsBySelector(ctx context.Context, mainPageLocator playwright.Locator, selector string, maxCount uint8) (*[]string, error) {
+	select {
+	case <-ctx.Done():
+		{
+			e.logger.Debug("context is done, returnning from getAllStringsBySelector")
+			return nil, ctx.Err()
 		}
-		arrOfStr[index] = str
+	default:
+		{
+			stringLocators, err := mainPageLocator.Locator(selector).All()
+			if err != nil {
+				e.logger.Error("failed get locators from main page", slog.Any("err", err.Error()))
+				return nil, err
+			}
+
+			countOfStrings := maxCount
+
+			if len(stringLocators) < int(maxCount) {
+				countOfStrings = uint8(len(stringLocators))
+			}
+
+			select {
+			case <-ctx.Done():
+				{
+					e.logger.Debug("context is done, returnning from getAllStringsBySelector")
+					return nil, ctx.Err()
+				}
+			default:
+				{
+					arrOfStr := make([]string, countOfStrings)
+
+					for index := range countOfStrings {
+						str, err := stringLocators[index].InnerText()
+						if err != nil {
+							e.logger.Error("failed get from parent locator", slog.Any("err", err.Error()))
+							return nil, err
+						}
+						arrOfStr[index] = str
+					}
+
+					return &arrOfStr, nil
+				}
+			}
+
+		}
 	}
 
-	return &arrOfStr, nil
 }
 
 func (e *implCambridgeCardExtractor) getPronunciation(ctx context.Context, mainPageLocator playwright.Locator) (*models.File, error) {

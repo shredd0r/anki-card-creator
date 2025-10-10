@@ -18,8 +18,8 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-type geminiProviderExpectedCalls func(subject string, cfg config.RatingConfig, gp *mock_providers.MockGeminiProvider)
-type googleImageProviderExpectedCalls func(subject string, cfg config.RatingConfig, gip *mock_providers.MockGoogleImageProvider)
+type geminiProviderExpectedCalls func(subject string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider)
+type googleImageProviderExpectedCalls func(subject string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_providers.MockGoogleImageProvider)
 type fieldComponentFetcherFactoryExpectedCalls func(subject string, subjectType models.SubjectType, ctrl *gomock.Controller, fcff *mock_fetchers.MockFieldComponentFetcherFactory)
 
 type positiveCase struct {
@@ -83,7 +83,7 @@ func TestPositiveCases(t *testing.T) {
 	logger := slog.Default()
 	ctrl := gomock.NewController(t)
 
-	cfg := config.RatingConfig{
+	cfg := config.PictureConfig{
 		NumberOfAttemptRatingPicture: 3,
 		MinimalRating:                7,
 	}
@@ -98,7 +98,7 @@ func TestPositiveCases(t *testing.T) {
 				fcff := mock_fetchers.NewMockFieldComponentFetcherFactory(ctrl)
 
 				testcase.geminiProviderExpectedCalls(testcase.ExpectedFlashcard.Subject, cfg, gp)
-				testcase.googleImageProviderExpectedCalls(testcase.ExpectedFlashcard.Subject, cfg, gip)
+				testcase.googleImageProviderExpectedCalls(testcase.ExpectedFlashcard.Subject, cfg, ctrl, gip)
 				testcase.fieldComponentFetcherFactoryExpectedCalls(testcase.ExpectedFlashcard.Subject, testcase.ExpectedFlashcard.SubjectType, ctrl, fcff)
 
 				c := NewFlashcardCreator(cfg, logger, gp, gip, fcff)
@@ -185,7 +185,7 @@ func TestNegativeCases(t *testing.T) {
 	logger := slog.Default()
 	ctrl := gomock.NewController(t)
 
-	cfg := config.RatingConfig{
+	cfg := config.PictureConfig{
 		NumberOfAttemptRatingPicture: 3,
 		MinimalRating:                7,
 	}
@@ -201,7 +201,7 @@ func TestNegativeCases(t *testing.T) {
 				fcff := mock_fetchers.NewMockFieldComponentFetcherFactory(ctrl)
 
 				testcase.geminiProviderExpectedCalls(testcase.Subject, cfg, gp)
-				testcase.googleImageProviderExpectedCalls(testcase.Subject, cfg, gip)
+				testcase.googleImageProviderExpectedCalls(testcase.Subject, cfg, ctrl, gip)
 				testcase.fieldComponentFetcherFactoryExpectedCalls(testcase.Subject, utils.GetSubjectType(testcase.Subject), ctrl, fcff)
 
 				c := NewFlashcardCreator(cfg, logger, gp, gip, fcff)
@@ -216,17 +216,17 @@ func TestNegativeCases(t *testing.T) {
 	wg.Wait()
 }
 
-func geminiProviderExpectedCallsForRatingPicture(subject string, cfg config.RatingConfig, gp *mock_providers.MockGeminiProvider) {
+func geminiProviderExpectedCallsForRatingPicture(subject string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider) {
 	gp.EXPECT().
 		RatingPicture(gomock.Any(), subject, gomock.Any()).
 		Times(1).
 		Return(&cfg.MinimalRating, nil)
 }
 
-func geminiProviderWithoutExpectdCalls(subject string, cfg config.RatingConfig, gp *mock_providers.MockGeminiProvider) {
+func geminiProviderWithoutExpectdCalls(subject string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider) {
 }
 
-func geminiProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed(subject string, cfg config.RatingConfig, gp *mock_providers.MockGeminiProvider) {
+func geminiProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed(subject string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider) {
 	rating := cfg.MinimalRating - 1
 	gp.
 		EXPECT().
@@ -235,7 +235,7 @@ func geminiProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed(subject st
 		Return(&rating, nil)
 }
 
-func geminiProviderExpectedCallsWhereReturnErr(subject string, cfg config.RatingConfig, gp *mock_providers.MockGeminiProvider) {
+func geminiProviderExpectedCallsWhereReturnErr(subject string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider) {
 	gp.
 		EXPECT().
 		RatingPicture(gomock.Any(), subject, gomock.Any()).
@@ -243,32 +243,54 @@ func geminiProviderExpectedCallsWhereReturnErr(subject string, cfg config.Rating
 		Return(nil, errors.New("quota for requests is over"))
 }
 
-func googleImageProviderExpectedCallsForGetOnePicture(subject string, cfg config.RatingConfig, gip *mock_providers.MockGoogleImageProvider) {
+func googleImageProviderExpectedCallsForGetOnePicture(subject string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_providers.MockGoogleImageProvider) {
+	qgip := mock_providers.NewMockGoogleImageQueryProvider(ctrl)
+
+	qgip.
+		EXPECT().
+		Get(gomock.Any(), uint(0)).
+		Return(&models.File{}, nil)
+
 	gip.
 		EXPECT().
-		Get(gomock.Any(), uint(0), subject).
-		Return(&models.File{}, nil)
+		NewQuery(gomock.Any(), subject).
+		Return(qgip, nil)
 }
 
-func googleImageProviderWithoutExpectdCalls(subject string, cfg config.RatingConfig, gip *mock_providers.MockGoogleImageProvider) {
+func googleImageProviderWithoutExpectdCalls(subject string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_providers.MockGoogleImageProvider) {
+
 }
 
-func googleImageProviderExpectedCallsWhereUseAllAttempts(subject string, cfg config.RatingConfig, gip *mock_providers.MockGoogleImageProvider) {
+func googleImageProviderExpectedCallsWhereUseAllAttempts(subject string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_providers.MockGoogleImageProvider) {
+	qgip := mock_providers.NewMockGoogleImageQueryProvider(ctrl)
+
 	for attempt := range cfg.NumberOfAttemptRatingPicture {
-		gip.
+		qgip.
 			EXPECT().
-			Get(gomock.Any(), attempt, subject).
+			Get(gomock.Any(), attempt).
 			Times(1).
 			Return(&models.File{}, nil)
 	}
-}
 
-func googleImageProviderExpectedCallsWhereReturnErr(subject string, cfg config.RatingConfig, gip *mock_providers.MockGoogleImageProvider) {
 	gip.
 		EXPECT().
-		Get(gomock.Any(), uint(0), subject).
+		NewQuery(gomock.Any(), subject).
+		Return(qgip, nil)
+}
+
+func googleImageProviderExpectedCallsWhereReturnErr(subject string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_providers.MockGoogleImageProvider) {
+	qgip := mock_providers.NewMockGoogleImageQueryProvider(ctrl)
+
+	qgip.
+		EXPECT().
+		Get(gomock.Any(), uint(0)).
 		Times(1).
 		Return(nil, errors.New("index out of range"))
+
+	gip.
+		EXPECT().
+		NewQuery(gomock.Any(), subject).
+		Return(qgip, nil)
 }
 
 func fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults(subject string, subjectType models.SubjectType, ctrl *gomock.Controller, fcff *mock_fetchers.MockFieldComponentFetcherFactory) {

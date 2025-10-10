@@ -271,7 +271,7 @@ func notesManagerExpectedCallWhereAddedNewNote(flashcard *models.Flashcard, mnm 
 	}
 
 	if flashcard.Picture != nil {
-		fields["Picture"] = getFilename(flashcard, typeForPicture)
+		fields["Picture"] = putFileNameToImgTag(getFilename(flashcard, typeForPicture))
 	}
 	if flashcard.Transcription != nil {
 		fields["Transcription"] = *flashcard.Transcription
@@ -331,4 +331,8 @@ func modelsManagerExpectedCallsWhereTemplateNotExist(templateName string, mmm *m
 
 func getFilename(flashcard *models.Flashcard, typeOfFile string) string {
 	return fmt.Sprintf("_%s.%s", strings.ToLower(strings.ReplaceAll(flashcard.Subject, " ", "-")), typeOfFile)
+}
+
+func putFileNameToImgTag(filename string) string {
+	return fmt.Sprintf("<img src='%s'>", filename)
 }

@@ -1,7 +1,8 @@
 package config
 
 type Config struct {
-	RatingConfig     RatingConfig
+	QuerySize        int
+	PictureConfig    PictureConfig
 	NotesConfig      NotesConfig
 	GeminiConfig     GeminiConfig
 	PlayWrightConfig PlayWrightConfig
@@ -20,7 +21,8 @@ type GeminiConfig struct {
 	Token string
 }
 
-type RatingConfig struct {
+type PictureConfig struct {
+	IgnorePictureError           bool
 	NumberOfAttemptRatingPicture uint
 	MinimalRating                uint
 }
