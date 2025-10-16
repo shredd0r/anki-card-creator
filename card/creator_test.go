@@ -18,6 +18,7 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+type funcForCreateFieldComponentFether func(subject string, ctrl *gomock.Controller) *mock_fetchers.MockFieldComponentFetcher
 type geminiProviderExpectedCalls func(subject string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider)
 type googleImageProviderExpectedCalls func(subject string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_providers.MockGoogleImageProvider)
 type fieldComponentFetcherFactoryExpectedCalls func(subject string, subjectType models.SubjectType, ctrl *gomock.Controller, fcff *mock_fetchers.MockFieldComponentFetcherFactory)
@@ -126,35 +127,35 @@ func TestNegativeCases(t *testing.T) {
 	testcases := []negativeCase{
 		{
 			Name:                             "error from get transcription method",
-			Subject:                          "transcription",
+			Subject:                          "err-transcription",
 			ExpectedErrMessage:               "error from get transcription method",
 			geminiProviderExpectedCalls:      geminiProviderExpectedCallsForRatingPicture,
 			googleImageProviderExpectedCalls: googleImageProviderExpectedCallsForGetOnePicture,
-			fieldComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
+			fieldComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereOneOfFethechersMethodReturnErr,
 		},
 		{
 			Name:                             "error from get explain method",
-			Subject:                          "explain",
+			Subject:                          "err-explain",
 			ExpectedErrMessage:               "error from get explain method",
 			geminiProviderExpectedCalls:      geminiProviderExpectedCallsForRatingPicture,
 			googleImageProviderExpectedCalls: googleImageProviderExpectedCallsForGetOnePicture,
-			fieldComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
+			fieldComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereOneOfFethechersMethodReturnErr,
 		},
 		{
 			Name:                             "error from get examples method",
-			Subject:                          "examples",
+			Subject:                          "err-examples",
 			ExpectedErrMessage:               "error from get examples method",
 			geminiProviderExpectedCalls:      geminiProviderExpectedCallsForRatingPicture,
 			googleImageProviderExpectedCalls: googleImageProviderExpectedCallsForGetOnePicture,
-			fieldComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
+			fieldComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereOneOfFethechersMethodReturnErr,
 		},
 		{
 			Name:                             "error from get pronunciation method",
-			Subject:                          "pronunciation",
+			Subject:                          "err-pronunciation",
 			ExpectedErrMessage:               "error from get pronunciation method",
 			geminiProviderExpectedCalls:      geminiProviderExpectedCallsForRatingPicture,
 			googleImageProviderExpectedCalls: googleImageProviderExpectedCallsForGetOnePicture,
-			fieldComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
+			fieldComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereOneOfFethechersMethodReturnErr,
 		},
 		{
 			Name:                             "unsupported subjectType",
@@ -190,30 +191,30 @@ func TestNegativeCases(t *testing.T) {
 		MinimalRating:                7,
 	}
 
-	wg := sync.WaitGroup{}
+	// wg := sync.WaitGroup{}
 	for _, testcase := range testcases {
-		wg.Add(1)
+		// wg.Add(1)
 		t.Run(testcase.Name, func(t *testing.T) {
-			go func() {
-				defer wg.Done()
-				gp := mock_providers.NewMockGeminiProvider(ctrl)
-				gip := mock_providers.NewMockGoogleImageProvider(ctrl)
-				fcff := mock_fetchers.NewMockFieldComponentFetcherFactory(ctrl)
+			// go func() {
+			// defer wg.Done()
+			gp := mock_providers.NewMockGeminiProvider(ctrl)
+			gip := mock_providers.NewMockGoogleImageProvider(ctrl)
+			fcff := mock_fetchers.NewMockFieldComponentFetcherFactory(ctrl)
 
-				testcase.geminiProviderExpectedCalls(testcase.Subject, cfg, gp)
-				testcase.googleImageProviderExpectedCalls(testcase.Subject, cfg, ctrl, gip)
-				testcase.fieldComponentFetcherFactoryExpectedCalls(testcase.Subject, utils.GetSubjectType(testcase.Subject), ctrl, fcff)
+			testcase.geminiProviderExpectedCalls(testcase.Subject, cfg, gp)
+			testcase.googleImageProviderExpectedCalls(testcase.Subject, cfg, ctrl, gip)
+			testcase.fieldComponentFetcherFactoryExpectedCalls(testcase.Subject, utils.GetSubjectType(testcase.Subject), ctrl, fcff)
 
-				c := NewFlashcardCreator(cfg, logger, gp, gip, fcff)
+			c := NewFlashcardCreator(cfg, logger, gp, gip, fcff)
 
-				flashcard, err := c.Create(t.Context(), testcase.Subject, "test-deckname")
-				assert.Nil(t, flashcard)
-				assert.EqualError(t, err, testcase.ExpectedErrMessage)
-			}()
+			flashcard, err := c.Create(t.Context(), testcase.Subject, "test-deckname")
+			assert.Nil(t, flashcard)
+			assert.EqualError(t, err, testcase.ExpectedErrMessage)
+			// }()
 		})
 	}
 
-	wg.Wait()
+	// wg.Wait()
 }
 
 func geminiProviderExpectedCallsForRatingPicture(subject string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider) {
@@ -294,11 +295,20 @@ func googleImageProviderExpectedCallsWhereReturnErr(subject string, cfg config.P
 }
 
 func fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults(subject string, subjectType models.SubjectType, ctrl *gomock.Controller, fcff *mock_fetchers.MockFieldComponentFetcherFactory) {
+	fetcherFactoryExpectedCallsWhereFetchersReturnBy(subject, subjectType, ctrl, fcff, mockFieldComponentFetchersForWord, mockFieldComponentFetchersForPhrase)
+}
+
+func fetcherFactoryExpectedCallsWhereOneOfFethechersMethodReturnErr(subject string, subjectType models.SubjectType, ctrl *gomock.Controller, fcff *mock_fetchers.MockFieldComponentFetcherFactory) {
+	fetcherFactoryExpectedCallsWhereFetchersReturnBy(subject, subjectType, ctrl, fcff, mockFieldComponentFetchersForWordWithErr, mockFieldComponentFetchersForPhraseWithErr)
+}
+
+func fetcherFactoryExpectedCallsWhereFetchersReturnBy(subject string, subjectType models.SubjectType, ctrl *gomock.Controller, fcff *mock_fetchers.MockFieldComponentFetcherFactory, funcForCreateFieldFetherForWord funcForCreateFieldComponentFether, funcForCreateFieldFetherForPhrase funcForCreateFieldComponentFether,
+) {
 	var mockFieldComponent fetchers.FieldComponentFetcher
 	if subjectType == models.SubjectTypeWord {
-		mockFieldComponent = mockFieldComponentFetchersForWord(subject, ctrl)
+		mockFieldComponent = funcForCreateFieldFetherForWord(subject, ctrl)
 	} else {
-		mockFieldComponent = mockFieldComponentFetchersForPhrase(subject, ctrl)
+		mockFieldComponent = funcForCreateFieldFetherForPhrase(subject, ctrl)
 	}
 
 	fcff.
@@ -306,7 +316,6 @@ func fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults(subject string
 		Get(models.SubjectType(subjectType)).
 		Times(1).
 		Return(mockFieldComponent, nil)
-
 }
 
 func fetcherFactoryExpectedCallsWhereReturnUnsupportedSubjectTypeErr(subject string, subjectType models.SubjectType, ctrl *gomock.Controller, fcff *mock_fetchers.MockFieldComponentFetcherFactory) {
@@ -353,8 +362,6 @@ func fetcherFactoryExpectedCallsWhereGetPictureReturnErr(subject string, subject
 		Return(fieldComponent, nil)
 }
 
-// For negative cases, was added checking.
-// If subject names same as one of flashcard field, fetcher method for getting this volume has to return error
 func mockFieldComponentFetchersForWord(subject string, ctrl *gomock.Controller) *mock_fetchers.MockFieldComponentFetcher {
 	fieldComponent := mock_fetchers.NewMockFieldComponentFetcher(ctrl)
 
@@ -369,8 +376,48 @@ func mockFieldComponentFetchersForWord(subject string, ctrl *gomock.Controller) 
 		EXPECT().
 		GetTranscription(gomock.Any(), subject).
 		Times(1).
+		Return(&transcription, nil)
+
+	explain := "word-explain"
+	fieldComponent.
+		EXPECT().
+		GetExplain(gomock.Any(), subject).
+		Times(1).
+		Return(&explain, nil)
+
+	fieldComponent.
+		EXPECT().
+		GetExamples(gomock.Any(), subject).
+		Times(1).
+		Return(&[]string{"word-example"}, nil)
+
+	fieldComponent.
+		EXPECT().
+		GetPronunciation(gomock.Any(), subject).
+		Times(1).
+		Return(&models.File{}, nil)
+
+	return fieldComponent
+}
+
+// For negative cases, was added checking.
+// If subject names same as one of flashcard field, fetcher method for getting this volume has to return error
+func mockFieldComponentFetchersForWordWithErr(subject string, ctrl *gomock.Controller) *mock_fetchers.MockFieldComponentFetcher {
+	fieldComponent := mock_fetchers.NewMockFieldComponentFetcher(ctrl)
+
+	fieldComponent.
+		EXPECT().
+		GetSubjectType().
+		AnyTimes().
+		Return(models.SubjectType(models.SubjectTypeWord))
+
+	transcription := "word-transcription"
+	fieldComponent.
+		EXPECT().
+		GetTranscription(gomock.Any(), subject).
+		AnyTimes().
 		DoAndReturn(func(ctx context.Context, subject string) (*string, error) {
-			if subject == "transcription" {
+			if subject == "err-transcription" {
 				time.Sleep(time.Second * 2)
 				return nil, errors.New("error from get transcription method")
 			}
@@ -381,9 +428,9 @@ func mockFieldComponentFetchersForWord(subject string, ctrl *gomock.Controller) 
 	fieldComponent.
 		EXPECT().
 		GetExplain(gomock.Any(), subject).
-		Times(1).
+		AnyTimes().
 		DoAndReturn(func(ctx context.Context, subject string) (*string, error) {
-			if subject == "explain" {
+			if subject == "err-explain" {
 				time.Sleep(time.Second * 2)
 				return nil, errors.New("error from get explain method")
 			}
@@ -393,9 +440,9 @@ func mockFieldComponentFetchersForWord(subject string, ctrl *gomock.Controller) 
 	fieldComponent.
 		EXPECT().
 		GetExamples(gomock.Any(), subject).
-		Times(1).
+		AnyTimes().
 		DoAndReturn(func(ctx context.Context, subject string) (*[]string, error) {
-			if subject == "examples" {
+			if subject == "err-examples" {
 				time.Sleep(time.Second * 2)
 				return nil, errors.New("error from get examples method")
 			}
@@ -405,9 +452,9 @@ func mockFieldComponentFetchersForWord(subject string, ctrl *gomock.Controller) 
 	fieldComponent.
 		EXPECT().
 		GetPronunciation(gomock.Any(), subject).
-		Times(1).
+		AnyTimes().
 		DoAndReturn(func(ctx context.Context, subject string) (*models.File, error) {
-			if subject == "pronunciation" {
+			if subject == "err-pronunciation" {
 				time.Sleep(time.Second * 2)
 				return nil, errors.New("error from get pronunciation method")
 			}
@@ -417,8 +464,6 @@ func mockFieldComponentFetchersForWord(subject string, ctrl *gomock.Controller) 
 	return fieldComponent
 }
 
-// For negative cases, was added checking.
-// If subject names same as one of flashcard field, fetcher method for getting this volume has to return error
 func mockFieldComponentFetchersForPhrase(subject string, ctrl *gomock.Controller) *mock_fetchers.MockFieldComponentFetcher {
 	fieldComponent := mock_fetchers.NewMockFieldComponentFetcher(ctrl)
 
@@ -439,8 +484,47 @@ func mockFieldComponentFetchersForPhrase(subject string, ctrl *gomock.Controller
 		EXPECT().
 		GetExplain(gomock.Any(), subject).
 		Times(1).
+		Return(&explain, nil)
+
+	fieldComponent.
+		EXPECT().
+		GetExamples(gomock.Any(), subject).
+		Times(1).
+		Return(&[]string{"phrase-example"}, nil)
+
+	fieldComponent.
+		EXPECT().
+		GetPronunciation(gomock.Any(), subject).
+		Times(1).
+		Return(nil, nil)
+
+	return fieldComponent
+}
+
+// For negative cases, was added checking.
+// If subject names same as one of flashcard field, fetcher method for getting this volume has to return error
+func mockFieldComponentFetchersForPhraseWithErr(subject string, ctrl *gomock.Controller) *mock_fetchers.MockFieldComponentFetcher {
+	fieldComponent := mock_fetchers.NewMockFieldComponentFetcher(ctrl)
+
+	fieldComponent.
+		EXPECT().
+		GetSubjectType().
+		AnyTimes().
+		Return(models.SubjectType(models.SubjectTypePhrase))
+
+	fieldComponent.
+		EXPECT().
+		GetTranscription(gomock.Any(), subject).
+		AnyTimes().
+		Return(nil, nil)
+
+	explain := "phrase-explain"
+	fieldComponent.
+		EXPECT().
+		GetExplain(gomock.Any(), subject).
+		AnyTimes().
 		DoAndReturn(func(ctx context.Context, subject string) (*string, error) {
-			if subject == "explain" {
+			if subject == "err-explain" {
 				time.Sleep(time.Second * 2)
 				return nil, errors.New("error from get explain method")
 			}
@@ -450,9 +534,9 @@ func mockFieldComponentFetchersForPhrase(subject string, ctrl *gomock.Controller
 	fieldComponent.
 		EXPECT().
 		GetExamples(gomock.Any(), subject).
-		Times(1).
+		AnyTimes().
 		DoAndReturn(func(ctx context.Context, subject string) (*[]string, error) {
-			if subject == "examples" {
+			if subject == "err-examples" {
 				time.Sleep(time.Second * 2)
 				return nil, errors.New("error from get examples method")
 			}
@@ -462,7 +546,7 @@ func mockFieldComponentFetchersForPhrase(subject string, ctrl *gomock.Controller
 	fieldComponent.
 		EXPECT().
 		GetPronunciation(gomock.Any(), subject).
-		Times(1).
+		AnyTimes().
 		Return(nil, nil)
 
 	return fieldComponent

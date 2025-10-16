@@ -1,7 +1,7 @@
 package config
 
 type Config struct {
-	QuerySize        int
+	QueueSize        int
 	PictureConfig    PictureConfig
 	NotesConfig      NotesConfig
 	GeminiConfig     GeminiConfig

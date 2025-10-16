@@ -14,7 +14,7 @@ const default_batch_size = 5
 const template_name = "Maple Template X"
 
 type AnkiCardCreator struct {
-	querySize       int
+	queueSize       int
 	logger          *slog.Logger
 	ankiService     AnkiService
 	cardCreator     card.FlashcardCreator
@@ -22,14 +22,14 @@ type AnkiCardCreator struct {
 }
 
 func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService AnkiService, cardCreator card.FlashcardCreator, targetExtractor extractors.TargetExtractor) *AnkiCardCreator {
-	batchSize := default_batch_size
+	queueSize := default_batch_size
 
-	if cfg.QuerySize != 0 {
-		batchSize = cfg.QuerySize
+	if cfg.QueueSize != 0 {
+		queueSize = cfg.QueueSize
 	}
 
 	return &AnkiCardCreator{
-		querySize:       batchSize,
+		queueSize:       queueSize,
 		logger:          logger.WithGroup("anki-card-creator"),
 		ankiService:     ankiService,
 		cardCreator:     cardCreator,
@@ -48,13 +48,14 @@ func (c *AnkiCardCreator) Create(ctx context.Context, pathToTargets string) erro
 	}
 
 	errg := errgroup.Group{}
-	chanQuery := make(chan bool, c.querySize)
+	chanQueue := make(chan bool, c.queueSize)
 
 	for _, target := range *targets {
 		for _, subject := range target.Subjects {
 			errg.Go(func() error {
-				defer func() { <-chanQuery }()
-				chanQuery <- true
+				// Realese the queue
+				defer func() { <-chanQueue }()
+				chanQueue <- true
 				c.logger.Info("start creating flashcard", slog.Any("subject", subject))
 				isExist, err := c.ankiService.IsCardAlreadyExist(ctx, subject, target.DeckName)
 				if err != nil {

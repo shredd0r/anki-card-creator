@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 
 	"github.com/playwright-community/playwright-go"
 	"github.com/shredd0r/anki-card-creator/downloader"
@@ -17,7 +18,7 @@ const (
 	selector_for_matched_image                    = "img[style*='object-position']"
 	selector_for_detail_view_image                = "a[role='link'] > img[jsaction]:first-child"
 	selector_for_detail_view_image_for_some_cases = "a[role='link'] > img[jsname]:first-child"
-	selector_for_button_search                    = "div[jsname] > center > input[value='Google Search']"
+	selector_for_button_search                    = "input[value='Google Search']"
 )
 
 var errIndexOutOfRange = errors.New("index out of range")
@@ -76,12 +77,6 @@ func (p *implGoogleImageQueryProvider) Get(ctx context.Context, numOfPicture uin
 		}
 
 	}()
-	// Waiting for when loading all matched pictures on page
-	err := p.page.Locator(selector_for_matched_image).First().WaitFor()
-	if err != nil {
-		p.logger.Error("failed wait for loading images on page or no one image is matched", slog.Any("err", err.Error()))
-		return nil, err
-	}
 
 	matchedImgLocators, err := p.page.Locator(selector_for_matched_image).All()
 	if err != nil {
@@ -139,13 +134,39 @@ func (p *implGoogleImageProvider) moveToPageWithImages(search string) (playwrigh
 		return nil, err
 	}
 
-	inputLocator := page.Locator(selector_for_button_search)
-	err = inputLocator.Click()
+	// This selector return more than one locator.
+	// I dont know why and when but structure of web page changed
+	// Thats why I use simple selector, but this selector return more than one locators
+	inputLocators, err := page.Locator(selector_for_button_search).All()
 	if err != nil {
-		p.logger.Error("failed click 'Google Search'", slog.Any("err", err.Error()))
+		p.logger.Error("failed get locators by selector for button")
 		return nil, err
 	}
 
+	// Click every found button
+	wg := sync.WaitGroup{}
+	for _, inputLocator := range inputLocators {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := inputLocator.Click(playwright.LocatorClickOptions{
+				Timeout: playwright.Float(5000),
+			})
+			if err != nil {
+				p.logger.Debug("failed click to input", slog.Any("err", err))
+			}
+		}()
+	}
+
+	// Waiting for end all goroutines
+	wg.Wait()
+
+	// Waiting for loading all matched pictures on page
+	err = page.Locator(selector_for_matched_image).First().WaitFor()
+	if err != nil {
+		p.logger.Error("failed wait for loading images on page or no one image is matched", slog.Any("err", err.Error()))
+		return nil, err
+	}
 	return page, nil
 }
 

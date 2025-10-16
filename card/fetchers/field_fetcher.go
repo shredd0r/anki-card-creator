@@ -13,6 +13,7 @@ import (
 	"github.com/shredd0r/anki-card-creator/providers"
 )
 
+// TODO add synonyms for subject
 type FieldComponentFetcher interface {
 	GetSubjectType() models.SubjectType
 	GetTranscription(ctx context.Context, subject string) (*string, error)
@@ -45,21 +46,11 @@ func (wf *wordFieldComponentFetcher) GetSubjectType() models.SubjectType {
 func (wf *wordFieldComponentFetcher) GetTranscription(ctx context.Context, subject string) (*string, error) {
 	wf.logger.Debug("start get transcription for word", slog.Any("word", subject))
 
-	select {
-	case <-ctx.Done():
-		{
-			wf.logger.Debug("context is done, returning from GetTranscription")
-			return nil, ctx.Err()
-		}
-	default:
-		{
-			cambridgeCard, err := wf.fetchCambridgeCard(ctx, subject)
-			if err != nil {
-				return nil, err
-			}
-			return cambridgeCard.Transcription, nil
-		}
+	cambridgeCard, err := wf.fetchCambridgeCard(ctx, subject)
+	if err != nil {
+		return nil, err
 	}
+	return cambridgeCard.Transcription, nil
 }
 
 func (wf *wordFieldComponentFetcher) GetExplain(ctx context.Context, subject string) (*string, error) {
@@ -106,6 +97,12 @@ func (wf *wordFieldComponentFetcher) GetPronunciation(ctx context.Context, subje
 }
 
 func (wf *wordFieldComponentFetcher) fetchCambridgeCard(ctx context.Context, subject string) (*models.CambridgeCard, error) {
+	// Moved mutex lock/unlock at the beginning, because this function will be call multiply times from goroutines.
+	// cambridgeExtractor.GetCard can return error, which affects to another goroutines (see method FlashcardCreator.Create)
+	// That`s why I lock this part. If one of goroutine return error in this place, another goroutines are stop, because ctx will be canceled
+	wf.mu.Lock()
+	defer wf.mu.Unlock()
+
 	select {
 	case <-ctx.Done():
 		{
@@ -114,9 +111,7 @@ func (wf *wordFieldComponentFetcher) fetchCambridgeCard(ctx context.Context, sub
 		}
 	default:
 		{
-			wf.mu.Lock()
 			wf.logger.Debug("call fetchCambridgeCard")
-			defer wf.mu.Unlock()
 
 			if wf._cambridgeCard == nil {
 				wf.logger.Debug("get card from cambridge")
@@ -130,7 +125,6 @@ func (wf *wordFieldComponentFetcher) fetchCambridgeCard(ctx context.Context, sub
 			return wf._cambridgeCard, nil
 		}
 	}
-
 }
 
 type phraseFieldComponentFetcher struct {

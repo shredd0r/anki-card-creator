@@ -6,13 +6,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/shredd0r/anki-card-creator/card/fetchers"
 	"github.com/shredd0r/anki-card-creator/config"
 	"github.com/shredd0r/anki-card-creator/models"
 	"github.com/shredd0r/anki-card-creator/providers"
 	"github.com/shredd0r/anki-card-creator/utils"
-	"golang.org/x/sync/errgroup"
 )
 
 type FlashcardCreator interface {
@@ -50,10 +50,17 @@ func (c *implFlashcardCreator) Create(ctx context.Context, subject string, deck 
 	return c.create(ctx, fieldComponentFetcher, subject, deck)
 }
 
+type fetchTask struct {
+	fieldName                 string
+	gettingVolumeAndPutToChan func(ctx context.Context, subject string) error
+	ignoreTaskErr             bool
+}
+
 func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher fetchers.FieldComponentFetcher, subject string, deck string) (*models.Flashcard, error) {
 	c.logger.Debug("start create flashcard", slog.Any("subject", subject))
 
-	errg := errgroup.Group{}
+	ctxForCreate, cancel := context.WithCancel(ctx)
+	wg := &sync.WaitGroup{}
 
 	subjectType := fieldComponentFetcher.GetSubjectType()
 	chanForExplain := make(chan *string, 1)
@@ -61,46 +68,86 @@ func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher
 	chanForTranscription := make(chan *string, 1)
 	chanForPronunciation := make(chan *models.File, 1)
 	chanForPicture := make(chan *models.File, 1)
+	chanForErr := make(chan error, 1)
 
-	errg.Go(func() error {
-		explain, err := fieldComponentFetcher.GetExplain(ctx, subject)
-		chanForExplain <- explain
-		c.logger.Debug("done get explain, put it to channel")
-		return err
-	})
+	fetchTasks := []fetchTask{
+		{
+			fieldName: "explain",
+			gettingVolumeAndPutToChan: func(ctx context.Context, subject string) error {
+				explain, err := fieldComponentFetcher.GetExplain(ctx, subject)
+				chanForExplain <- explain
+				return err
+			},
+			ignoreTaskErr: false,
+		},
+		{
+			fieldName: "examples",
+			gettingVolumeAndPutToChan: func(ctx context.Context, subject string) error {
+				examples, err := fieldComponentFetcher.GetExamples(ctx, subject)
+				chanForExamples <- examples
+				return err
+			},
+			ignoreTaskErr: false,
+		},
+		{
+			fieldName: "transcription",
+			gettingVolumeAndPutToChan: func(ctx context.Context, subject string) error {
+				transcription, err := fieldComponentFetcher.GetTranscription(ctx, subject)
+				chanForTranscription <- transcription
+				return err
+			},
+			ignoreTaskErr: false,
+		},
+		{
+			fieldName: "pronunciation",
+			gettingVolumeAndPutToChan: func(ctx context.Context, subject string) error {
+				pronunciation, err := fieldComponentFetcher.GetPronunciation(ctx, subject)
+				chanForPronunciation <- pronunciation
+				return err
+			},
+			ignoreTaskErr: false,
+		},
+		{
+			fieldName: "picture",
+			gettingVolumeAndPutToChan: func(ctx context.Context, subject string) error {
+				picture, err := c.getPicture(ctx, subject, subjectType)
+				chanForPicture <- picture
+				return err
+			},
+			ignoreTaskErr: c.pictureCfg.IgnorePictureError,
+		},
+	}
 
-	errg.Go(func() error {
-		examples, err := fieldComponentFetcher.GetExamples(ctx, subject)
-		chanForExamples <- examples
-		c.logger.Debug("done get examples, put it to channel")
-		return err
-	})
-
-	errg.Go(func() error {
-		transcription, err := fieldComponentFetcher.GetTranscription(ctx, subject)
-		chanForTranscription <- transcription
-		c.logger.Debug("done get transcription, put it to channel")
-		return err
-	})
-
-	errg.Go(func() error {
-		pronunciation, err := fieldComponentFetcher.GetPronunciation(ctx, subject)
-		chanForPronunciation <- pronunciation
-		c.logger.Debug("done get pronunciation, put it to channel")
-		return err
-	})
-
-	errg.Go(func() error {
-		picture, err := c.getPicture(ctx, subject, subjectType)
-		chanForPicture <- picture
-		c.logger.Debug("done get picture, put it to channel")
-		return err
-	})
+	for _, fetchTask := range fetchTasks {
+		wg.Add(1)
+		go func() {
+			defer func() {
+				wg.Done()
+				c.logger.Debug("call defer method")
+			}()
+			err := fetchTask.gettingVolumeAndPutToChan(ctxForCreate, subject)
+			if err != nil {
+				c.logger.Debug(fmt.Sprintf("received error after get %s", fetchTask.fieldName))
+				// First check ignoring error
+				if fetchTask.ignoreTaskErr {
+					c.logger.Debug("received error need ignore, skip it")
+				} else {
+					// After that, if in channel for error empty, put error to channel, because needed only first error
+					if len(chanForErr) == 0 {
+						c.logger.Debug("cancel context, put err to chan", slog.Any("err", err.Error()))
+						cancel()
+						chanForErr <- err
+					}
+				}
+			}
+		}()
+	}
 
 	c.logger.Debug("start waiting for complete all field component fetcher goroutines")
-	err := errg.Wait()
-	if err != nil {
-		return nil, err
+	wg.Wait()
+	cancel()
+	if len(chanForErr) != 0 {
+		return nil, <-chanForErr
 	}
 
 	return &models.Flashcard{
