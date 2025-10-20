@@ -50,8 +50,10 @@ func NewGeminiProvider(logger *slog.Logger, client *genai.Client) GeminiProvider
 				},
 			},
 			SystemInstruction: genai.NewContentFromText(
-				`I will send you new word or phrase or idiom, you should create 5 examples using it, concise, for low level of English proficiency. 
-				Dont use quatation marks on begin and end`,
+				`I will send you new word or phrase or idiom, you should create 5 examples using it.
+				 An example sentence showing its usage, and a synonyms.
+				 Result have to be concise, structured for easy reading.
+				 As result, expecting this format for each example: 'example-text. [Synonym: synonym-text]'`,
 				genai.RoleUser),
 		},
 		cfgForGenerateExplain: &genai.GenerateContentConfig{
@@ -60,8 +62,9 @@ func NewGeminiProvider(logger *slog.Logger, client *genai.Client) GeminiProvider
 				Type: genai.TypeString,
 			},
 			SystemInstruction: genai.NewContentFromText(
-				`I will send you word or phrase or idiom, you should write explain this word. Answer could be only 1 sentence, concise, without using this word, phrase, idiom. 
-				For low level of English proficiency. Dont use quatation marks on begin and end`,
+				`I will send you word or phrase or idiom, you should generate paraphrase this word. Answer could be only 1 sentence.
+				Paraphrase mustn't have this word, phrase, idiom. 
+				Result have to be concise, structured for easy reading.`,
 				genai.RoleUser),
 		},
 		cfgForRatingPicture: &genai.GenerateContentConfig{
@@ -74,8 +77,8 @@ func NewGeminiProvider(logger *slog.Logger, client *genai.Client) GeminiProvider
 				},
 			},
 			SystemInstruction: genai.NewContentFromText(
-				`I will send you picture and word, you have to analyze this picture. 
-				Picture will be use for flashcard, so the picture have to describe word, idiom, phrase. 
+				`You have to analyze this picture. 
+				Picture will be use for flashcard, the picture have to describe word, idiom, phrase. 
 				Word, idion or phrase can't be written on picture. 
 				You should give me rating between 1 - 10, where 10 its best match `,
 				genai.RoleUser),
@@ -130,9 +133,14 @@ func (p *implGeminiProvider) GenerateExplain(ctx context.Context, subject string
 		return nil, p.wrapError(err)
 	}
 
-	examplesStr := result.Text()
+	var explain string
+	explainStr := result.Text()
+	err = json.Unmarshal([]byte(explainStr), &explain)
+	if err != nil {
+		p.logger.Error("failed unmarshal generated explain to str")
+	}
 
-	return &examplesStr, nil
+	return &explain, nil
 }
 
 // RatingPicture - method for send request to gemini backend, which checking how suitable is this picture for describe the subject.

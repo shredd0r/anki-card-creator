@@ -109,6 +109,7 @@ func (e *implCambridgeCardExtractor) GetCard(ctx context.Context, subject string
 	if err != nil {
 		return nil, err
 	}
+	defer page.Close()
 
 	mainPageLocator := page.Locator("html")
 	var pronunciation *models.File

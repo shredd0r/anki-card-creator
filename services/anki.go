@@ -28,6 +28,7 @@ var (
 const query_for_get_notes = `"subject:%s" "deck:%s"`
 
 type AnkiService interface {
+	AddTemplate(ctx context.Context) error
 	StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error
 	IsCardAlreadyExist(ctx context.Context, subject string, deckname string) (bool, error)
 }
@@ -44,6 +45,11 @@ func NewAnkiService(logger *slog.Logger, client *ankiconnect.Client) AnkiService
 		client:            client,
 		alreadyExistDecks: map[string]bool{},
 	}
+}
+
+// TODO add creation template in anki collection
+func (s *implAnkiService) AddTemplate(ctx context.Context) error {
+	panic("not implement")
 }
 
 func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error {
