@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/shredd0r/anki-card-creator/models"
 	"google.golang.org/genai"
@@ -20,7 +22,8 @@ var (
 )
 
 const (
-	model_for_generate_text = "gemini-2.5-flash"
+	model_for_generate_text = "gemini-2.5-flash" //free model
+	rpm                     = 10                 //request per minute
 )
 
 type ratingPictureResponse struct {
@@ -47,7 +50,8 @@ func NewGeminiProvider(logger *slog.Logger, client *genai.Client) GeminiProvider
 				},
 			},
 			SystemInstruction: genai.NewContentFromText(
-				`I will send you new word or phrase or idiom, you should create 5 examples using it, concise, for low level of English proficiency`,
+				`I will send you new word or phrase or idiom, you should create 5 examples using it, concise, for low level of English proficiency. 
+				Dont use quatation marks on begin and end`,
 				genai.RoleUser),
 		},
 		cfgForGenerateExplain: &genai.GenerateContentConfig{
@@ -56,7 +60,8 @@ func NewGeminiProvider(logger *slog.Logger, client *genai.Client) GeminiProvider
 				Type: genai.TypeString,
 			},
 			SystemInstruction: genai.NewContentFromText(
-				`I will send you word or phrase or idiom, you should write explain this word. Answer could be only 1 sentence, concise, without using this word, phrase, idiom. for low level of English proficiency`,
+				`I will send you word or phrase or idiom, you should write explain this word. Answer could be only 1 sentence, concise, without using this word, phrase, idiom. 
+				For low level of English proficiency. Dont use quatation marks on begin and end`,
 				genai.RoleUser),
 		},
 		cfgForRatingPicture: &genai.GenerateContentConfig{
@@ -169,6 +174,10 @@ func (p *implGeminiProvider) RatingPicture(ctx context.Context, subject string, 
 }
 
 func (p *implGeminiProvider) wrapError(err error) error {
+	if !errors.As(err, &genai.APIError{}) {
+		return err
+	}
+
 	apiErr := err.(genai.APIError)
 
 	switch apiErr.Code {
@@ -182,5 +191,141 @@ func (p *implGeminiProvider) wrapError(err error) error {
 		}
 	default:
 		return err
+	}
+}
+
+type callMethodTask struct {
+	nameOfMethod string
+	method       func() error
+}
+
+// rateLimitGeminiProvider decorator for GeminiProvider, which calculate using quota for all requests and wait for new tokens if it is out.
+// Add calls to queue if quota is out and wait for new one
+type rateLimitGeminiProvider struct {
+	mt            sync.Mutex
+	minuteTimer   *time.Timer
+	queueTaskChan chan struct{}
+
+	logger   *slog.Logger
+	provider GeminiProvider
+}
+
+func NewRateLimitGeminiProvider(ctx context.Context, logger *slog.Logger, client *genai.Client) GeminiProvider {
+	provider := &rateLimitGeminiProvider{
+		logger:        logger,
+		queueTaskChan: make(chan struct{}, rpm),
+		provider:      NewGeminiProvider(logger, client),
+	}
+
+	return provider
+}
+
+func (p *rateLimitGeminiProvider) GenerateExamples(ctx context.Context, subject string) (*[]string, error) {
+	var examples *[]string
+
+	generateExamplesTask := callMethodTask{
+		nameOfMethod: "GenerateExamples",
+		method: func() error {
+			examplesResp, err := p.provider.GenerateExamples(ctx, subject)
+			examples = examplesResp
+			return err
+		},
+	}
+
+	err := p.callProviderMethod(ctx, generateExamplesTask)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return examples, nil
+}
+func (p *rateLimitGeminiProvider) GenerateExplain(ctx context.Context, subject string) (*string, error) {
+	var explain *string
+
+	generateExplainTask := callMethodTask{
+		nameOfMethod: "GenerateExplain",
+		method: func() error {
+			explainResp, err := p.provider.GenerateExplain(ctx, subject)
+			explain = explainResp
+			return err
+		},
+	}
+
+	err := p.callProviderMethod(ctx, generateExplainTask)
+	if err != nil {
+		return nil, err
+	}
+
+	return explain, nil
+}
+func (p *rateLimitGeminiProvider) RatingPicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
+	var rating *uint
+
+	generateExplainTask := callMethodTask{
+		nameOfMethod: "RatingPicture",
+		method: func() error {
+			ratingResp, err := p.provider.RatingPicture(ctx, subject, picture)
+			rating = ratingResp
+			return err
+		},
+	}
+
+	err := p.callProviderMethod(ctx, generateExplainTask)
+	if err != nil {
+		return nil, err
+	}
+
+	return rating, nil
+}
+
+func (p *rateLimitGeminiProvider) callProviderMethod(ctx context.Context, providersMethodTask callMethodTask) error {
+	p.logger.Debug("start call method", slog.Any("method", providersMethodTask.nameOfMethod))
+	select {
+	case <-ctx.Done():
+		{
+			p.logger.Debug("context is done, returning from callProviderMethod")
+			return ctx.Err()
+		}
+	case p.queueTaskChan <- struct{}{}:
+		{
+			defer p.tryStartNewRequestPeriod(ctx)
+			return providersMethodTask.method()
+		}
+	}
+}
+
+// This method calls every time when calls one of provider`s method,
+// because minute timer need start only after first request to gemini
+func (p *rateLimitGeminiProvider) tryStartNewRequestPeriod(ctx context.Context) {
+	p.mt.Lock()
+	defer p.mt.Unlock()
+	// Timer is nil means that period with requests end or haven`tn started yet
+	// Thats why is inited new timer and start goroutine for handling ending request period
+	if p.minuteTimer == nil {
+		p.logger.Debug("start new timer")
+		p.minuteTimer = time.NewTimer(time.Minute)
+
+		go func() {
+			p.logger.Debug("start goroutine for waiting timer end")
+			select {
+			case <-ctx.Done():
+				{
+					p.logger.Debug("context is done, end 'tryStartNewRequestPeriod' goroutine")
+					return
+				}
+			case <-p.minuteTimer.C:
+				{
+					p.minuteTimer = nil
+					p.logger.Debug("timer is done, cleaning queue")
+					for range len(p.queueTaskChan) {
+						<-p.queueTaskChan
+					}
+
+				}
+			}
+		}()
+	} else {
+		p.logger.Debug("timer is already started, skip initiation new one")
 	}
 }

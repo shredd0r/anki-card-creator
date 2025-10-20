@@ -51,9 +51,9 @@ func (c *implFlashcardCreator) Create(ctx context.Context, subject string, deck 
 }
 
 type fetchTask struct {
-	fieldName                 string
-	gettingVolumeAndPutToChan func(ctx context.Context, subject string) error
-	ignoreTaskErr             bool
+	fieldName     string
+	callMethod    func(ctx context.Context, subject string) error
+	ignoreTaskErr bool
 }
 
 func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher fetchers.FieldComponentFetcher, subject string, deck string) (*models.Flashcard, error) {
@@ -63,55 +63,55 @@ func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher
 	wg := &sync.WaitGroup{}
 
 	subjectType := fieldComponentFetcher.GetSubjectType()
-	chanForExplain := make(chan *string, 1)
-	chanForExamples := make(chan *[]string, 1)
-	chanForTranscription := make(chan *string, 1)
-	chanForPronunciation := make(chan *models.File, 1)
-	chanForPicture := make(chan *models.File, 1)
+	var explain *string
+	var examples *[]string
+	var transcription *string
+	var pronunciation *models.File
+	var picture *models.File
 	chanForErr := make(chan error, 1)
 
 	fetchTasks := []fetchTask{
 		{
 			fieldName: "explain",
-			gettingVolumeAndPutToChan: func(ctx context.Context, subject string) error {
-				explain, err := fieldComponentFetcher.GetExplain(ctx, subject)
-				chanForExplain <- explain
+			callMethod: func(ctx context.Context, subject string) error {
+				respExplain, err := fieldComponentFetcher.GetExplain(ctx, subject)
+				explain = respExplain
 				return err
 			},
 			ignoreTaskErr: false,
 		},
 		{
 			fieldName: "examples",
-			gettingVolumeAndPutToChan: func(ctx context.Context, subject string) error {
-				examples, err := fieldComponentFetcher.GetExamples(ctx, subject)
-				chanForExamples <- examples
+			callMethod: func(ctx context.Context, subject string) error {
+				respExamples, err := fieldComponentFetcher.GetExamples(ctx, subject)
+				examples = respExamples
 				return err
 			},
 			ignoreTaskErr: false,
 		},
 		{
 			fieldName: "transcription",
-			gettingVolumeAndPutToChan: func(ctx context.Context, subject string) error {
-				transcription, err := fieldComponentFetcher.GetTranscription(ctx, subject)
-				chanForTranscription <- transcription
+			callMethod: func(ctx context.Context, subject string) error {
+				respTranscription, err := fieldComponentFetcher.GetTranscription(ctx, subject)
+				transcription = respTranscription
 				return err
 			},
 			ignoreTaskErr: false,
 		},
 		{
 			fieldName: "pronunciation",
-			gettingVolumeAndPutToChan: func(ctx context.Context, subject string) error {
-				pronunciation, err := fieldComponentFetcher.GetPronunciation(ctx, subject)
-				chanForPronunciation <- pronunciation
+			callMethod: func(ctx context.Context, subject string) error {
+				respPronunciation, err := fieldComponentFetcher.GetPronunciation(ctx, subject)
+				pronunciation = respPronunciation
 				return err
 			},
 			ignoreTaskErr: false,
 		},
 		{
 			fieldName: "picture",
-			gettingVolumeAndPutToChan: func(ctx context.Context, subject string) error {
-				picture, err := c.getPicture(ctx, subject, subjectType)
-				chanForPicture <- picture
+			callMethod: func(ctx context.Context, subject string) error {
+				respPicture, err := c.getPicture(ctx, subject, subjectType)
+				picture = respPicture
 				return err
 			},
 			ignoreTaskErr: c.pictureCfg.IgnorePictureError,
@@ -121,11 +121,8 @@ func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher
 	for _, fetchTask := range fetchTasks {
 		wg.Add(1)
 		go func() {
-			defer func() {
-				wg.Done()
-				c.logger.Debug("call defer method")
-			}()
-			err := fetchTask.gettingVolumeAndPutToChan(ctxForCreate, subject)
+			defer wg.Done()
+			err := fetchTask.callMethod(ctxForCreate, subject)
 			if err != nil {
 				c.logger.Debug(fmt.Sprintf("received error after get %s", fetchTask.fieldName))
 				// First check ignoring error
@@ -154,11 +151,11 @@ func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher
 		Subject:       subject,
 		SubjectType:   subjectType,
 		DeckName:      deck,
-		Transcription: <-chanForTranscription,
-		Pronunciation: <-chanForPronunciation,
-		Picture:       <-chanForPicture,
-		Explain:       *<-chanForExplain,
-		Examples:      *<-chanForExamples,
+		Transcription: transcription,
+		Pronunciation: pronunciation,
+		Picture:       picture,
+		Explain:       *explain,
+		Examples:      *examples,
 	}, nil
 }
 
