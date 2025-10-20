@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/atselvan/ankiconnect"
 	"github.com/shredd0r/anki-card-creator/models"
@@ -77,6 +78,7 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string,
 	}
 
 	g := errgroup.Group{}
+	fieldsMutex := sync.Mutex{}
 
 	//  Store picture file in anki with goroutine if card has picture
 	if flashcard.Picture != nil {
@@ -85,7 +87,9 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string,
 			if err != nil {
 				return err
 			}
+			fieldsMutex.Lock()
 			ankiCardFields["Picture"] = s.formatPictureField(filename)
+			fieldsMutex.Unlock()
 			return nil
 		})
 
@@ -98,7 +102,9 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string,
 			if err != nil {
 				return err
 			}
+			fieldsMutex.Lock()
 			ankiCardFields["Pronunciation"] = filename
+			fieldsMutex.Unlock()
 			return nil
 		})
 	}
