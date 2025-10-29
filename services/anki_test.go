@@ -188,7 +188,7 @@ func GetFlashcardForWord() *models.Flashcard {
 			MIMEType: typeMIMEForPronunciation,
 		},
 		Transcription: &transcription,
-		Explain:       "test-explain",
+		Paraphrase:    "test-paraphrase",
 		Picture: &models.File{
 			Content:  []byte("picture-content"),
 			MIMEType: typeMIMEForPicture,
@@ -202,7 +202,7 @@ func GetFlashcardForPhrase() *models.Flashcard {
 		Subject:     "Test phrase",
 		SubjectType: models.SubjectTypePhrase,
 		DeckName:    "test-deck-name",
-		Explain:     "test-explain",
+		Paraphrase:  "test-paraphrase",
 		Examples:    []string{"test-example"},
 	}
 }
@@ -262,7 +262,7 @@ func notesManagerExpectedCallsWhereCheckCardIsExist(flashcard *models.Flashcard,
 func notesManagerExpectedCallWhereAddedNewNote(flashcard *models.Flashcard, mnm *mock_ankiconnect.MockNotesManager) {
 	fields := map[string]string{
 		"Subject":      flashcard.Subject,
-		"Paraphrase":   flashcard.Explain,
+		"Paraphrase":   flashcard.Paraphrase,
 		"Example":      fmt.Sprintf("<ul><li>%s</li></ul>", flashcard.Examples[0]),
 		"Has_Spelling": "1",
 	}

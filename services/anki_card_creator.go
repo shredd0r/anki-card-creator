@@ -66,7 +66,7 @@ func (c *AnkiCardCreator) Create(ctx context.Context, pathToTargets string) erro
 					return nil
 				}
 
-				flashcard, err := c.cardCreator.Create(ctx, subject, target.DeckName)
+				flashcard, err := c.cardCreator.Create(ctx, target.DeckName, subject, target.Tags)
 				if err != nil {
 					return err
 				}
@@ -89,4 +89,8 @@ func (c *AnkiCardCreator) Create(ctx context.Context, pathToTargets string) erro
 	c.logger.Info("creating flashcards is done")
 
 	return nil
+}
+
+func (c *AnkiCardCreator) isCriticalError(ctx context.Context, err error) bool {
+	return false
 }

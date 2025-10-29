@@ -74,7 +74,7 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string,
 
 	ankiCardFields := map[string]string{
 		"Subject":      flashcard.Subject,
-		"Paraphrase":   flashcard.Explain,
+		"Paraphrase":   flashcard.Paraphrase,
 		"Example":      s.formatExampleField(flashcard),
 		"Has_Spelling": "1",
 	}

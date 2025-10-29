@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,8 +33,7 @@ type ratingPictureResponse struct {
 }
 
 type GeminiProvider interface {
-	GenerateExamples(ctx context.Context, subject string) (*[]string, error)
-	GenerateExplain(ctx context.Context, subject string) (*string, error)
+	GenerateCardContent(ctx context.Context, subject string, usingContext *[]string) (*models.GeminiCard, error)
 	RatingPicture(ctx context.Context, subject string, picture *models.File) (*uint, error)
 }
 
@@ -41,29 +41,34 @@ func NewGeminiProvider(logger *slog.Logger, client *genai.Client) GeminiProvider
 	return &implGeminiProvider{
 		logger: logger,
 		client: client,
-		cfgForGenerateExamples: &genai.GenerateContentConfig{
+		cfgForGenerateContentCard: &genai.GenerateContentConfig{
 			ResponseMIMEType: "application/json",
 			ResponseSchema: &genai.Schema{
-				Type: genai.TypeArray,
-				Items: &genai.Schema{
-					Type: genai.TypeString,
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"paraphrase": {
+						Type: genai.TypeString,
+					},
+					"examples": {
+						Type: genai.TypeArray,
+						Items: &genai.Schema{
+							Type: genai.TypeString,
+						},
+					},
+					"synonyms": {
+						Type: genai.TypeArray,
+						Items: &genai.Schema{
+							Type: genai.TypeString,
+						},
+					},
 				},
 			},
 			SystemInstruction: genai.NewContentFromText(
-				`I will send you new word or phrase or idiom, you should create 5 examples using it.
-				 An example sentence showing its usage, and a synonyms.
-				 Result have to be concise, structured for easy reading.
-				 As result, expecting this format for each example: 'example-text. [Synonym: synonym-text]'`,
-				genai.RoleUser),
-		},
-		cfgForGenerateExplain: &genai.GenerateContentConfig{
-			ResponseMIMEType: "application/json",
-			ResponseSchema: &genai.Schema{
-				Type: genai.TypeString,
-			},
-			SystemInstruction: genai.NewContentFromText(
-				`I will send you word or phrase or idiom, you should generate paraphrase this word. Answer could be only 1 sentence.
-				Paraphrase mustn't have this word, phrase, idiom. 
+				`I send you word or phrase or idiom, you should generate paraphrase, example of using and synonyms for this subject.
+				In examples you must highlighted in bold subject with html tag like: <b>{subject}</b>.
+				Max count of generated examples and synonyms have to be 5.
+				Min count of generated examples and synonyms have to be 3.
+				Paraphrase mustn't has this word, phrase, idiom. 
 				Result have to be concise, structured for easy reading.`,
 				genai.RoleUser),
 		},
@@ -87,21 +92,21 @@ func NewGeminiProvider(logger *slog.Logger, client *genai.Client) GeminiProvider
 }
 
 type implGeminiProvider struct {
-	logger                 *slog.Logger
-	client                 *genai.Client
-	cfgForGenerateExamples *genai.GenerateContentConfig
-	cfgForGenerateExplain  *genai.GenerateContentConfig
-	cfgForRatingPicture    *genai.GenerateContentConfig
+	logger                    *slog.Logger
+	client                    *genai.Client
+	cfgForGenerateContentCard *genai.GenerateContentConfig
+	cfgForRatingPicture       *genai.GenerateContentConfig
 }
 
-// GenerateExamples - method for send request to gemini backend for generate examples of subject.
-// Subject can be: word, phrase, idiom
-func (p *implGeminiProvider) GenerateExamples(ctx context.Context, subject string) (*[]string, error) {
+// GenerateCardContent generate content for subject. 'usingContext' means that context where is used this subject.
+// For example word "starter" is used in context ["food", "cafe", "dish"]
+// 'usingContext' can be nil
+func (p *implGeminiProvider) GenerateCardContent(ctx context.Context, subject string, usingContext *[]string) (*models.GeminiCard, error) {
 	result, err := p.client.Models.GenerateContent(
 		ctx,
 		model_for_generate_text,
-		genai.Text(subject),
-		p.cfgForGenerateExamples,
+		genai.Text(p.getContentTextForRequest(subject, usingContext)),
+		p.cfgForGenerateContentCard,
 	)
 
 	if err != nil {
@@ -109,38 +114,15 @@ func (p *implGeminiProvider) GenerateExamples(ctx context.Context, subject strin
 		return nil, p.wrapError(err)
 	}
 
-	examplesStr := result.Text()
-	var examples []string
-	err = json.Unmarshal([]byte(examplesStr), &examples)
+	var geminiCard models.GeminiCard
+	geminiCardStr := result.Text()
+	err = json.Unmarshal([]byte(geminiCardStr), &geminiCard)
 	if err != nil {
-		p.logger.Error("failed unmarshal generated text to array")
-	}
-	return &examples, nil
-}
-
-// GenerateExplain - method for send request to gemini backend for generate explain of subject.
-// Subject can be: word, phrase, idiom
-func (p *implGeminiProvider) GenerateExplain(ctx context.Context, subject string) (*string, error) {
-	result, err := p.client.Models.GenerateContent(
-		ctx,
-		model_for_generate_text,
-		genai.Text(subject),
-		p.cfgForGenerateExplain,
-	)
-
-	if err != nil {
-		p.logger.Error(fmt.Sprintf("failed generate content for subject: %s", subject), slog.Any("err", err.Error()))
-		return nil, p.wrapError(err)
+		p.logger.Error("failed unmarshal generate card content", slog.Any("err", err.Error()))
+		return nil, err
 	}
 
-	var explain string
-	explainStr := result.Text()
-	err = json.Unmarshal([]byte(explainStr), &explain)
-	if err != nil {
-		p.logger.Error("failed unmarshal generated explain to str")
-	}
-
-	return &explain, nil
+	return &geminiCard, nil
 }
 
 // RatingPicture - method for send request to gemini backend, which checking how suitable is this picture for describe the subject.
@@ -202,6 +184,13 @@ func (p *implGeminiProvider) wrapError(err error) error {
 	}
 }
 
+func (p *implGeminiProvider) getContentTextForRequest(subject string, usingContext *[]string) string {
+	if usingContext != nil {
+		return fmt.Sprintf("{'subject': '%s', 'using-context': '%s'}", subject, strings.Join(*usingContext, ", "))
+	}
+	return fmt.Sprintf("{'subject': '%s'}", subject)
+}
+
 type callMethodTask struct {
 	nameOfMethod string
 	method       func() error
@@ -210,9 +199,9 @@ type callMethodTask struct {
 // rateLimitGeminiProvider decorator for GeminiProvider, which calculate using quota for all requests and wait for new tokens if it is out.
 // Add calls to queue if quota is out and wait for new one
 type rateLimitGeminiProvider struct {
-	mt            sync.Mutex
-	minuteTimer   *time.Timer
-	queueTaskChan chan struct{}
+	mt                        sync.Mutex
+	isStartedMinutePeriodChan chan struct{}
+	activeTaskChan            chan struct{}
 
 	logger   *slog.Logger
 	provider GeminiProvider
@@ -220,53 +209,41 @@ type rateLimitGeminiProvider struct {
 
 func NewRateLimitGeminiProvider(ctx context.Context, logger *slog.Logger, client *genai.Client) GeminiProvider {
 	provider := &rateLimitGeminiProvider{
-		logger:        logger,
-		queueTaskChan: make(chan struct{}, rpm),
-		provider:      NewGeminiProvider(logger, client),
+		logger:                    logger,
+		activeTaskChan:            make(chan struct{}, rpm),
+		isStartedMinutePeriodChan: make(chan struct{}, 1),
+		provider:                  NewGeminiProvider(logger, client),
 	}
 
 	return provider
 }
 
-func (p *rateLimitGeminiProvider) GenerateExamples(ctx context.Context, subject string) (*[]string, error) {
-	var examples *[]string
+// GenerateCardContent generate content for subject. 'usingContext' means that context where is used this subject.
+// For example word "starter" is used in context ["food", "cafe", "dish"]
+// 'usingContext' can be nil
+// Calling this method start process for calculate requesting per minutes for all calls to gemini backend
+func (p *rateLimitGeminiProvider) GenerateCardContent(ctx context.Context, subject string, usingContext *[]string) (*models.GeminiCard, error) {
+	var geminiCard *models.GeminiCard
 
-	generateExamplesTask := callMethodTask{
-		nameOfMethod: "GenerateExamples",
+	generateContentCardTask := callMethodTask{
+		nameOfMethod: "GenerateCardContent",
 		method: func() error {
-			examplesResp, err := p.provider.GenerateExamples(ctx, subject)
-			examples = examplesResp
+			geminiCardResp, err := p.provider.GenerateCardContent(ctx, subject, usingContext)
+			geminiCard = geminiCardResp
 			return err
 		},
 	}
 
-	err := p.callProviderMethod(ctx, generateExamplesTask)
-
+	err := p.callProviderMethod(ctx, generateContentCardTask)
 	if err != nil {
 		return nil, err
 	}
 
-	return examples, nil
+	return geminiCard, nil
 }
-func (p *rateLimitGeminiProvider) GenerateExplain(ctx context.Context, subject string) (*string, error) {
-	var explain *string
 
-	generateExplainTask := callMethodTask{
-		nameOfMethod: "GenerateExplain",
-		method: func() error {
-			explainResp, err := p.provider.GenerateExplain(ctx, subject)
-			explain = explainResp
-			return err
-		},
-	}
-
-	err := p.callProviderMethod(ctx, generateExplainTask)
-	if err != nil {
-		return nil, err
-	}
-
-	return explain, nil
-}
+// RatingPicture - method for send request to gemini backend, which checking how suitable is this picture for describe the subject.
+// Calling this method start process for calculate requesting per minutes for all calls to gemini backend
 func (p *rateLimitGeminiProvider) RatingPicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
 	var rating *uint
 
@@ -288,15 +265,16 @@ func (p *rateLimitGeminiProvider) RatingPicture(ctx context.Context, subject str
 }
 
 func (p *rateLimitGeminiProvider) callProviderMethod(ctx context.Context, providersMethodTask callMethodTask) error {
-	p.logger.Debug("start call method", slog.Any("method", providersMethodTask.nameOfMethod))
+	p.logger.Debug("start waiting for new slot in active task channel", slog.Any("method", providersMethodTask.nameOfMethod))
 	select {
 	case <-ctx.Done():
 		{
 			p.logger.Debug("context is done, returning from callProviderMethod")
 			return ctx.Err()
 		}
-	case p.queueTaskChan <- struct{}{}:
+	case p.activeTaskChan <- struct{}{}:
 		{
+			p.logger.Debug("active task channel free for new call method")
 			defer p.tryStartNewRequestPeriod(ctx)
 			return providersMethodTask.method()
 		}
@@ -308,32 +286,29 @@ func (p *rateLimitGeminiProvider) callProviderMethod(ctx context.Context, provid
 func (p *rateLimitGeminiProvider) tryStartNewRequestPeriod(ctx context.Context) {
 	p.mt.Lock()
 	defer p.mt.Unlock()
-	// Timer is nil means that period with requests end or haven`tn started yet
-	// Thats why is inited new timer and start goroutine for handling ending request period
-	if p.minuteTimer == nil {
-		p.logger.Debug("start new timer")
-		p.minuteTimer = time.NewTimer(time.Minute)
 
-		go func() {
-			p.logger.Debug("start goroutine for waiting timer end")
-			select {
-			case <-ctx.Done():
-				{
-					p.logger.Debug("context is done, end 'tryStartNewRequestPeriod' goroutine")
-					return
-				}
-			case <-p.minuteTimer.C:
-				{
-					p.minuteTimer = nil
-					p.logger.Debug("timer is done, cleaning queue")
-					for range len(p.queueTaskChan) {
-						<-p.queueTaskChan
-					}
+	p.isStartedMinutePeriodChan <- struct{}{}
 
-				}
+	p.logger.Debug("start new timer")
+	minuteTimer := time.NewTimer(time.Minute)
+
+	go func() {
+		defer func() { <-p.isStartedMinutePeriodChan }()
+		p.logger.Debug("start goroutine for waiting timer end")
+		select {
+		case <-ctx.Done():
+			{
+				p.logger.Debug("context is done, end 'tryStartNewRequestPeriod' goroutine")
+				return
 			}
-		}()
-	} else {
-		p.logger.Debug("timer is already started, skip initiation new one")
-	}
+		case <-minuteTimer.C:
+			{
+				p.logger.Debug("timer is done, cleaning queue")
+				for range len(p.activeTaskChan) {
+					<-p.activeTaskChan
+				}
+				p.logger.Debug("len active task chan after cleaning", slog.Any("len", len(p.activeTaskChan)))
+			}
+		}
+	}()
 }

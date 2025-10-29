@@ -15,12 +15,5 @@ Information for flashcards is taken from:
 * [Gemini API](https://gemini.google.com), used for generate volumes if it not found in dictionary, and rating picture for flashcard;
 * Google image, for find pictures for flashcard
 
-## TODO
-* **BUG: Sometimes rate limiter requests not start new period and queue doesnt cleaning -> deadlock in workflow**
-
-* Add field "context" to creating flashcard, because some words have different meanings. 
-
-* Or add support many explains (from cambridge extractor already support it)
-
 
 

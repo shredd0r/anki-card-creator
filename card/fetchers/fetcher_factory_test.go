@@ -20,18 +20,18 @@ func TestPositiveTests(t *testing.T) {
 		{
 			Name:         "get field fetcher for word",
 			SubjectType:  models.SubjectTypeWord,
-			ExpectedType: "*fetchers.wordFieldComponentFetcher",
+			ExpectedType: "*fetchers.wordCardContentComponentFetcher",
 		},
 		{
 			Name:         "get field fetcher for phrase",
 			SubjectType:  models.SubjectTypePhrase,
-			ExpectedType: "*fetchers.phraseFieldComponentFetcher",
+			ExpectedType: "*fetchers.phraseCardContentComponentFetcher",
 		},
 	}
 
 	logger := slog.Default()
 	for _, testcase := range testcases {
-		factory := NewFieldComponentFetcherFactory(logger, nil, nil)
+		factory := NewCardContentComponentFetcherFactory(logger, nil, nil)
 
 		t.Run(testcase.Name, func(t *testing.T) {
 			fieldFetcher, err := factory.Get(testcase.SubjectType)
@@ -44,7 +44,7 @@ func TestPositiveTests(t *testing.T) {
 
 func TestUnsupportedSubjectType(t *testing.T) {
 	logger := slog.Default()
-	factory := NewFieldComponentFetcherFactory(logger, nil, nil)
+	factory := NewCardContentComponentFetcherFactory(logger, nil, nil)
 
 	fieldFetcher, err := factory.Get(models.SubjectTypeNone)
 	assert.Nil(t, fieldFetcher)

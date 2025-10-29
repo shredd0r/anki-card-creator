@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/shredd0r/anki-card-creator/card/fetchers"
@@ -16,101 +17,70 @@ import (
 )
 
 type FlashcardCreator interface {
-	Create(ctx context.Context, subject string, deck string) (*models.Flashcard, error)
+	Create(ctx context.Context, deck string, subject string, usingContext *[]string) (*models.Flashcard, error)
 }
 
 type implFlashcardCreator struct {
-	pictureCfg                   config.PictureConfig
-	logger                       *slog.Logger
-	geminiProvider               providers.GeminiProvider
-	googleImageProvider          providers.GoogleImageProvider
-	fieldComponentFetcherFactory fetchers.FieldComponentFetcherFactory
+	pictureCfg                         config.PictureConfig
+	logger                             *slog.Logger
+	geminiProvider                     providers.GeminiProvider
+	googleImageProvider                providers.GoogleImageProvider
+	cardContentComponentFetcherFactory fetchers.CardContentComponentFetcherFactory
 }
 
 func NewFlashcardCreator(pictureCfg config.PictureConfig, logger *slog.Logger,
 	geminiProvider providers.GeminiProvider,
 	googleImageProvider providers.GoogleImageProvider,
-	fieldComponentFetcherFactory fetchers.FieldComponentFetcherFactory) FlashcardCreator {
+	cardContentComponentFetcherFactory fetchers.CardContentComponentFetcherFactory) FlashcardCreator {
 	return &implFlashcardCreator{
-		pictureCfg:                   pictureCfg,
-		logger:                       logger.WithGroup("flashcard-creator"),
-		googleImageProvider:          googleImageProvider,
-		geminiProvider:               geminiProvider,
-		fieldComponentFetcherFactory: fieldComponentFetcherFactory,
+		pictureCfg:                         pictureCfg,
+		logger:                             logger.WithGroup("flashcard-creator"),
+		googleImageProvider:                googleImageProvider,
+		geminiProvider:                     geminiProvider,
+		cardContentComponentFetcherFactory: cardContentComponentFetcherFactory,
 	}
 }
 
-func (c *implFlashcardCreator) Create(ctx context.Context, subject string, deck string) (*models.Flashcard, error) {
+func (c *implFlashcardCreator) Create(ctx context.Context, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
 	subjectType := utils.GetSubjectType(subject)
-	fieldComponentFetcher, err := c.fieldComponentFetcherFactory.Get(subjectType)
+	fieldComponentFetcher, err := c.cardContentComponentFetcherFactory.Get(subjectType)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.create(ctx, fieldComponentFetcher, subject, deck)
+	return c.create(ctx, fieldComponentFetcher, deck, subject, usingContext)
 }
 
 type fetchTask struct {
 	fieldName     string
-	callMethod    func(ctx context.Context, subject string) error
+	callMethod    func(ctx context.Context, subject string, usingContext *[]string) error
 	ignoreTaskErr bool
 }
 
-func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher fetchers.FieldComponentFetcher, subject string, deck string) (*models.Flashcard, error) {
+func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher fetchers.CardContentComponentFetcher, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
 	c.logger.Debug("start create flashcard", slog.Any("subject", subject))
 
 	ctxForCreate, cancel := context.WithCancel(ctx)
 	wg := &sync.WaitGroup{}
 
 	subjectType := fieldComponentFetcher.GetSubjectType()
-	var explain *string
-	var examples *[]string
-	var transcription *string
-	var pronunciation *models.File
+	var cardContent *models.CardContent
 	var picture *models.File
 	chanForErr := make(chan error, 1)
 
 	fetchTasks := []fetchTask{
 		{
-			fieldName: "explain",
-			callMethod: func(ctx context.Context, subject string) error {
-				respExplain, err := fieldComponentFetcher.GetExplain(ctx, subject)
-				explain = respExplain
+			fieldName: "card-content",
+			callMethod: func(ctx context.Context, subject string, usingContext *[]string) error {
+				respCardContent, err := fieldComponentFetcher.GetCardContent(ctx, subject, usingContext)
+				cardContent = respCardContent
 				return err
 			},
-			ignoreTaskErr: false,
-		},
-		{
-			fieldName: "examples",
-			callMethod: func(ctx context.Context, subject string) error {
-				respExamples, err := fieldComponentFetcher.GetExamples(ctx, subject)
-				examples = respExamples
-				return err
-			},
-			ignoreTaskErr: false,
-		},
-		{
-			fieldName: "transcription",
-			callMethod: func(ctx context.Context, subject string) error {
-				respTranscription, err := fieldComponentFetcher.GetTranscription(ctx, subject)
-				transcription = respTranscription
-				return err
-			},
-			ignoreTaskErr: false,
-		},
-		{
-			fieldName: "pronunciation",
-			callMethod: func(ctx context.Context, subject string) error {
-				respPronunciation, err := fieldComponentFetcher.GetPronunciation(ctx, subject)
-				pronunciation = respPronunciation
-				return err
-			},
-			ignoreTaskErr: false,
 		},
 		{
 			fieldName: "picture",
-			callMethod: func(ctx context.Context, subject string) error {
-				respPicture, err := c.getPicture(ctx, subject, subjectType)
+			callMethod: func(ctx context.Context, subject string, usingContext *[]string) error {
+				respPicture, err := c.getPicture(ctx, subject, usingContext, subjectType)
 				picture = respPicture
 				return err
 			},
@@ -122,7 +92,7 @@ func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := fetchTask.callMethod(ctxForCreate, subject)
+			err := fetchTask.callMethod(ctxForCreate, subject, usingContext)
 			if err != nil {
 				c.logger.Debug(fmt.Sprintf("received error after get %s", fetchTask.fieldName))
 				// First check ignoring error
@@ -151,23 +121,30 @@ func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher
 		Subject:       subject,
 		SubjectType:   subjectType,
 		DeckName:      deck,
-		Transcription: transcription,
-		Pronunciation: pronunciation,
+		Transcription: cardContent.Transcription,
+		Pronunciation: cardContent.Pronunciation,
 		Picture:       picture,
-		Explain:       *explain,
-		Examples:      *examples,
+		Paraphrase:    cardContent.Paraphrase,
+		Examples:      cardContent.Examples,
 	}, nil
 }
 
 // Method for rating pictures gotten from google image
 // If all attempts images don't match, creating card continue without picture
-func (c *implFlashcardCreator) getPicture(ctx context.Context, subject string, subjectType models.SubjectType) (*models.File, error) {
+func (c *implFlashcardCreator) getPicture(ctx context.Context, subject string, usingContext *[]string, subjectType models.SubjectType) (*models.File, error) {
 	if subjectType == models.SubjectTypePhrase {
 		c.logger.Debug("picture for phrase is not searching, skip", slog.Any("subject", subject))
 		return nil, nil
 	}
 
-	queryPageProvider, err := c.googleImageProvider.NewQuery(ctx, subject)
+	var query string
+	if usingContext == nil {
+		query = subject
+	} else {
+		query = fmt.Sprintf("%s %s", subject, strings.Join(*usingContext, ", "))
+	}
+
+	queryPageProvider, err := c.googleImageProvider.NewQuery(ctx, query)
 	if err != nil {
 		return nil, err
 	}

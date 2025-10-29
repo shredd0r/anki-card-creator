@@ -13,28 +13,30 @@ import (
 
 var errUnsupportedSubjectType = errors.New("unsupported subject type")
 
-type FieldComponentFetcherFactory interface {
-	Get(subjectType models.SubjectType) (FieldComponentFetcher, error)
+type CardContentComponentFetcherFactory interface {
+	Get(subjectType models.SubjectType) (CardContentComponentFetcher, error)
 }
 
 type implFieldComponentFetcherFactory struct {
-	logger                  *slog.Logger
-	cambridgeExtractor      extractors.CambridgeCardExtractor
-	geminiProvider          providers.GeminiProvider
-	phraseCardMethodCreator FieldComponentFetcher
+	logger                    *slog.Logger
+	cambridgeExtractor        extractors.CambridgeCardExtractor
+	geminiProvider            providers.GeminiProvider
+	wordFieldComponentFetcher CardContentComponentFetcher
+	phraseCardMethodCreator   CardContentComponentFetcher
 }
 
-func NewFieldComponentFetcherFactory(logger *slog.Logger, cambridgeExtractor extractors.CambridgeCardExtractor,
-	geminiProvider providers.GeminiProvider) FieldComponentFetcherFactory {
+func NewCardContentComponentFetcherFactory(logger *slog.Logger, cambridgeExtractor extractors.CambridgeCardExtractor,
+	geminiProvider providers.GeminiProvider) CardContentComponentFetcherFactory {
 	return &implFieldComponentFetcherFactory{
-		logger:                  logger.WithGroup("field-component-fetcher-factory"),
-		cambridgeExtractor:      cambridgeExtractor,
-		geminiProvider:          geminiProvider,
-		phraseCardMethodCreator: NewPhraseFieldComponentFetcher(logger, geminiProvider),
+		logger:                    logger.WithGroup("field-component-fetcher-factory"),
+		cambridgeExtractor:        cambridgeExtractor,
+		geminiProvider:            geminiProvider,
+		wordFieldComponentFetcher: NewWordCardContentComponentFetcher(logger, geminiProvider, cambridgeExtractor),
+		phraseCardMethodCreator:   NewPhraseCardContentComponentFetcher(logger, geminiProvider),
 	}
 }
 
-func (f *implFieldComponentFetcherFactory) Get(subjectType models.SubjectType) (FieldComponentFetcher, error) {
+func (f *implFieldComponentFetcherFactory) Get(subjectType models.SubjectType) (CardContentComponentFetcher, error) {
 	f.logger.Debug("start get card method creator", slog.Any("subjectType", subjectType))
 
 	switch subjectType {
@@ -43,9 +45,7 @@ func (f *implFieldComponentFetcherFactory) Get(subjectType models.SubjectType) (
 	case models.SubjectTypeWord:
 		{
 			f.logger.Debug("returning creator for word", slog.Any("subjectType", subjectType))
-
-			newWordCardFieldComponentFetcher := NewWordFieldComponentFetcher(f.logger, f.geminiProvider, f.cambridgeExtractor)
-			return newWordCardFieldComponentFetcher, nil
+			return f.wordFieldComponentFetcher, nil
 		}
 
 	case models.SubjectTypePhrase:
