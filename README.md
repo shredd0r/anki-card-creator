@@ -17,3 +17,7 @@ Information for flashcards is taken from:
 
 
 
+# TODO
+* add supporting self-hosted llms
+* add handling for gemini overload error
+* handling critical (stop processing) / non-critical error

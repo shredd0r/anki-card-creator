@@ -9,10 +9,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/shredd0r/anki-card-creator/card/fetchers"
+	"github.com/shredd0r/anki-card-creator/card/fetcher"
 	"github.com/shredd0r/anki-card-creator/config"
+	"github.com/shredd0r/anki-card-creator/google"
+	"github.com/shredd0r/anki-card-creator/llm"
 	"github.com/shredd0r/anki-card-creator/models"
-	"github.com/shredd0r/anki-card-creator/providers"
 	"github.com/shredd0r/anki-card-creator/utils"
 )
 
@@ -21,34 +22,34 @@ type FlashcardCreator interface {
 }
 
 type implFlashcardCreator struct {
-	pictureCfg                         config.PictureConfig
-	logger                             *slog.Logger
-	geminiProvider                     providers.GeminiProvider
-	googleImageProvider                providers.GoogleImageProvider
-	cardContentComponentFetcherFactory fetchers.CardContentComponentFetcherFactory
+	pictureCfg          config.PictureConfig
+	logger              *slog.Logger
+	llmProvider         llm.Provider
+	googleImageProvider google.Image
+	cardContentFactory  fetcher.CardContentFactory
 }
 
 func NewFlashcardCreator(pictureCfg config.PictureConfig, logger *slog.Logger,
-	geminiProvider providers.GeminiProvider,
-	googleImageProvider providers.GoogleImageProvider,
-	cardContentComponentFetcherFactory fetchers.CardContentComponentFetcherFactory) FlashcardCreator {
+	llmProvider llm.Provider,
+	googleImageProvider google.Image,
+	cardContentFactory fetcher.CardContentFactory) FlashcardCreator {
 	return &implFlashcardCreator{
-		pictureCfg:                         pictureCfg,
-		logger:                             logger.WithGroup("flashcard-creator"),
-		googleImageProvider:                googleImageProvider,
-		geminiProvider:                     geminiProvider,
-		cardContentComponentFetcherFactory: cardContentComponentFetcherFactory,
+		pictureCfg:          pictureCfg,
+		logger:              logger.WithGroup("flashcard-creator"),
+		googleImageProvider: googleImageProvider,
+		llmProvider:         llmProvider,
+		cardContentFactory:  cardContentFactory,
 	}
 }
 
 func (c *implFlashcardCreator) Create(ctx context.Context, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
 	subjectType := utils.GetSubjectType(subject)
-	fieldComponentFetcher, err := c.cardContentComponentFetcherFactory.Get(subjectType)
+	cardContentFetcher, err := c.cardContentFactory.Get(subjectType)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.create(ctx, fieldComponentFetcher, deck, subject, usingContext)
+	return c.create(ctx, cardContentFetcher, deck, subject, usingContext)
 }
 
 type fetchTask struct {
@@ -57,13 +58,13 @@ type fetchTask struct {
 	ignoreTaskErr bool
 }
 
-func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher fetchers.CardContentComponentFetcher, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
+func (c *implFlashcardCreator) create(ctx context.Context, cardContentFetcher fetcher.CardContent, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
 	c.logger.Debug("start create flashcard", slog.Any("subject", subject))
 
 	ctxForCreate, cancel := context.WithCancel(ctx)
 	wg := &sync.WaitGroup{}
 
-	subjectType := fieldComponentFetcher.GetSubjectType()
+	subjectType := cardContentFetcher.GetSubjectType()
 	var cardContent *models.CardContent
 	var picture *models.File
 	chanForErr := make(chan error, 1)
@@ -72,7 +73,7 @@ func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher
 		{
 			fieldName: "card-content",
 			callMethod: func(ctx context.Context, subject string, usingContext *[]string) error {
-				respCardContent, err := fieldComponentFetcher.GetCardContent(ctx, subject, usingContext)
+				respCardContent, err := cardContentFetcher.GetCardContent(ctx, subject, usingContext)
 				cardContent = respCardContent
 				return err
 			},
@@ -110,7 +111,7 @@ func (c *implFlashcardCreator) create(ctx context.Context, fieldComponentFetcher
 		}()
 	}
 
-	c.logger.Debug("start waiting for complete all field component fetcher goroutines")
+	c.logger.Debug("start waiting for complete all card content fetcher goroutines")
 	wg.Wait()
 	cancel()
 	if len(chanForErr) != 0 {
@@ -144,7 +145,7 @@ func (c *implFlashcardCreator) getPicture(ctx context.Context, subject string, u
 		query = fmt.Sprintf("%s %s", subject, strings.Join(*usingContext, ", "))
 	}
 
-	queryPageProvider, err := c.googleImageProvider.NewQuery(ctx, query)
+	queryPageProvider, err := c.googleImageProvider.Request(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -158,13 +159,7 @@ func (c *implFlashcardCreator) getPicture(ctx context.Context, subject string, u
 			return nil, err
 		}
 
-		// skip picture with mimetype svg, because this type not supported gemini server
-		if picture.MIMEType == "image/svg+xml" {
-			c.logger.Debug("skip image with type svg")
-			continue
-		}
-
-		rating, err := c.geminiProvider.RatingPicture(ctx, subject, picture)
+		rating, err := c.llmProvider.RatingPicture(ctx, subject, picture)
 		if err != nil {
 			c.logger.Error("failed rating picture for subject", slog.Any("subject", subject), slog.Any("attempt", attempt))
 			return nil, err

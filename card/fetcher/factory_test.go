@@ -1,4 +1,4 @@
-package fetchers
+package fetcher
 
 import (
 	"log/slog"
@@ -20,18 +20,18 @@ func TestPositiveTests(t *testing.T) {
 		{
 			Name:         "get field fetcher for word",
 			SubjectType:  models.SubjectTypeWord,
-			ExpectedType: "*fetchers.wordCardContentComponentFetcher",
+			ExpectedType: "*fetcher.wordCardContent",
 		},
 		{
 			Name:         "get field fetcher for phrase",
 			SubjectType:  models.SubjectTypePhrase,
-			ExpectedType: "*fetchers.phraseCardContentComponentFetcher",
+			ExpectedType: "*fetcher.phraseCardContent",
 		},
 	}
 
 	logger := slog.Default()
 	for _, testcase := range testcases {
-		factory := NewCardContentComponentFetcherFactory(logger, nil, nil)
+		factory := NewCardContentFactory(logger, nil, nil)
 
 		t.Run(testcase.Name, func(t *testing.T) {
 			fieldFetcher, err := factory.Get(testcase.SubjectType)
@@ -44,7 +44,7 @@ func TestPositiveTests(t *testing.T) {
 
 func TestUnsupportedSubjectType(t *testing.T) {
 	logger := slog.Default()
-	factory := NewCardContentComponentFetcherFactory(logger, nil, nil)
+	factory := NewCardContentFactory(logger, nil, nil)
 
 	fieldFetcher, err := factory.Get(models.SubjectTypeNone)
 	assert.Nil(t, fieldFetcher)

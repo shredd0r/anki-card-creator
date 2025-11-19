@@ -1,0 +1,338 @@
+[
+  {
+    "group": "Talking about likes and dislikes - Likes",
+    "phrases": [
+      "I absolutely love...",
+      "I'm really into...",
+      "I'm quite good at...",
+      "I spend a lot of time...",
+      "I'm keen on...",
+      "I'm excited about...",
+      "I'm a big fan of...",
+      "I adore..."
+    ]
+  },
+  {
+    "group": "Talking about likes and dislikes - Dislikes",
+    "phrases": [
+      "I absolutely hate...",
+      "I'm not into...",
+      "It sucks.",
+      "It makes me sick.",
+      "I'm not interested in ...",
+      "It drives me crazy.",
+      "I don't care about...",
+      "It's not my cup of tea."
+    ]
+  },
+  {
+    "group": "Describe and order food - Waiter",
+    "phrases": [
+      "Are you ready to order?",
+      "Can I interest you in...?",
+      "I recommend trying...",
+      "It tastes / smells / looks like....",
+      "What can I get you today?",
+      "What would you like...?",
+      "Why don't you try...?"
+    ]
+  },
+  {
+    "group": "Describe and order food - Customer",
+    "phrases": [
+      "I can't stand.....",
+      "I don't care for....",
+      "I'd like ...",
+      "I'll have ....",
+      "I'm a ..... lover",
+      "I'm crazy about ....",
+      "Is it spicy / sour / bitter.....?",
+      "Sounds delicious / exotic / good / terrible...",
+      "What's in it?"
+    ]
+  },
+  {
+    "group": "Give advice",
+    "phrases": [
+      "I think you should + V",
+      "You must + V!",
+      "You'd better + V",
+      "You shouldn't + V",
+      "If I were you, I'd + V",
+      "You have to + V",
+      "Why don't you + V?",
+      "How about Ving?"
+    ]
+  },
+  {
+    "group": "Give opinions - Giving opinion",
+    "phrases": [
+      "Personally, I think...",
+      "In my opinion,",
+      "In my view,",
+      "I do think..."
+    ]
+  },
+  {
+    "group": "Give opinions - Agreeing (+)",
+    "phrases": [
+      "I see what you mean.",
+      "Exactly!",
+      "Fair enough."
+    ]
+  },
+  {
+    "group": "Give opinions - Partially agreeing (+/-)",
+    "phrases": [
+      "I see your point, but...",
+      "I see, however..."
+    ]
+  },
+  {
+    "group": "Give opinions - Disagreeing (-)",
+    "phrases": [
+      "I totally disagree.",
+      "I'm not so sure."
+    ]
+  },
+  {
+    "group": "Suggesting",
+    "phrases": [
+      "I recommend + Ving",
+      "I recommend that you + V",
+      "It's worth + Ving",
+      "Why don't we + V?",
+      "Make sure you + V",
+      "How about + Ving?",
+      "You'd better (not) + V",
+      "I suggest we + V",
+      "Personally, I wouldn't + V",
+      "I don't feel like + Ving",
+      "What would you say to + N?"
+    ]
+  },
+  {
+    "group": "Narrative words - Linking words which show a sequence of events",
+    "phrases": [
+      "after a while,",
+      "later that day,",
+      "but just then,",
+      "when,",
+      "while"
+    ]
+  },
+  {
+    "group": "Narrative words - Linking words which express surprise",
+    "phrases": [
+      "surprisingly,",
+      "suddenly"
+    ]
+  },
+  {
+    "group": "Narrative words - Linking words which mean \"finally\"",
+    "phrases": [
+      "eventually,",
+      "in the end"
+    ]
+  },
+  {
+    "group": "Narrative words - Linking words which express how clear the situation is",
+    "phrases": [
+      "obviously"
+    ]
+  },
+  {
+    "group": "Talk about films",
+    "phrases": [
+      "This is just a charming, enjoyable and heartwarming show.",
+      "It's set in...",
+      "My favorite scene is ...",
+      "The characters are really well written and realistic.",
+      "The film is based on the stories of ...",
+      "It tells us the story of a ...",
+      "Bill Skarsgård plays the part of...",
+      "Laura Linney stars as ...",
+      "The acting is quite good, but the plot is totally ridiculous.",
+      "The series also deals with ..."
+    ]
+  },
+  {
+    "group": "Describing people in a negative way",
+    "phrases": [
+      "aggressive",
+      "dishonest",
+      "unreliable",
+      "immature (незрілий)",
+      "selfish",
+      "mean (жорстокий)",
+      "irresponsible",
+      "manipulative",
+      "talkative (балакучий)",
+      "douche",
+      "all bark and no bite",
+      "bimbo",
+      "crybaby",
+      "serial womanizer"
+    ]
+  },
+  {
+    "group": "Describe people in a positive way",
+    "phrases": [
+      "I've known her all my life",
+      "We've been friends for ... years / since we were kids.",
+      "She's one of the ... people I know.",
+      "I take after my dad in appearance / personality.",
+      "I'm as ... as my mom / I'm not as ... as my friend.",
+      "I look up to him/her because ...",
+      "He's an awesome cook / dancer / storyteller.",
+      "She's always in a good mood.",
+      "He's the life and soul of the party.",
+      "We get on really well.",
+      "I'd say she's quite patient / brave / funny / honest.",
+      "The thing I admire the most is ..."
+    ]
+  },
+  {
+    "group": "Talk about your skills",
+    "phrases": [
+      "I've been working as...",
+      "My duties included...",
+      "I have always been interested in...",
+      "I'm looking for a job where I can grow with the company.",
+      "I want to be challenged.",
+      "I'm punctual.",
+      "I consider myself to be a team-player.",
+      "I'm a people person.",
+      "My ability to be proactive could also help.",
+      "I can keep my cool.",
+      "To tell you the truth, I might be a bit hard on myself.",
+      "I believe I will enhance my knowledge."
+    ]
+  },
+  {
+    "group": "Describe an object - Describing an object",
+    "phrases": [
+      "It consists of ...",
+      "It has / has got ...",
+      "It's a type of ...",
+      "It's a kind of...",
+      "It's equipped with...",
+      "It's made of...",
+      "It looks like..."
+    ]
+  },
+  {
+    "group": "Describe an object - Describing how to use an object",
+    "phrases": [
+      "It helps you to...",
+      "You can use it to...",
+      "It's used for..."
+    ]
+  },
+  {
+    "group": "Describe an object - Sharing your opinion about an object",
+    "phrases": [
+      "I like how...",
+      "I think it's worth trying.",
+      "I (don't) like that ...",
+      "I would recommend it to...",
+      "I find it extremely useful because...",
+      "It's great for..."
+    ]
+  },
+  {
+    "group": "Writing a cover letter",
+    "phrases": [
+      "Greeting: if you know the name of the person, write \"Dear Mr. Pertenko / Ms. Smith\". Use \"Dear Sir/Madam\" when you don't know the recipient's name.",
+      "Reason for contacting them: explain why you are writing, what position you're interested in and where you saw it advertised.",
+      "Qualities / experience: describe the qualities which will be necessary for the job. Use examples to support your description.",
+      "Finishing the letter: decide what's going to happen after the recipient receives your letter. Who's going to contact whom?",
+      "Signing off: use \"Yours sincerely\" if you know the name of the recipient. \"Yours faithfully\" if you don't know who you're writing to. Use your full name after."
+    ]
+  },
+  {
+    "group": "Compare things",
+    "phrases": [
+      "Short (one syllable words) add endings --er if you compare two objects, or --est if you talk about three and more things.",
+      "Two syllable adjectives ending in --y eliminate y and add -ier/-iest.",
+      "Two and more syllable adjectives add more and the most before them."
+    ]
+  },
+  {
+    "group": "Talk about sleep habits.",
+    "phrases": [
+      "I feel dizzy.",
+      "I've got a black eye / blisters /pneumonia / fever. I've hurt my arm.",
+      "I've twisted my ankle.",
+      "My disease is contagious.",
+      "My back is killing me.",
+      "I've fainted.",
+      "I'm limping."
+    ]
+  },
+  {
+    "group": "Give excuses for being late - Warning someone that you will be late",
+    "phrases": [
+      "Sorry, I'm running late. Please start without me.",
+      "I'm afraid that I'm going to be late."
+    ]
+  },
+  {
+    "group": "Give excuses for being late - Apologizing for being late",
+    "phrases": [
+      "I'm so sorry for being late.",
+      "I'm terribly sorry that I'm late.",
+      "I apologize for the delay.",
+      "I'm sorry for keeping you waiting."
+    ]
+  },
+  {
+    "group": "Give excuses for being late - Giving excuses for being late",
+    "phrases": [
+      "I've been robbed.",
+      "The traffic was terrible.",
+      "I had to wait for the transport for ages.",
+      "I didn't hear the alarm clock.",
+      "I got into an accident.",
+      "I couldn't find a parking space."
+    ]
+  },
+  {
+    "group": "Being vague",
+    "phrases": [
+      "When you don't want to answer a direct question, you can say sort of, kind of, in a way.",
+      "When you don't want to give any more examples, you can say stuff like that, that kind of thing, and so on.",
+      "Mostly, approximately, more or less.",
+      "When you don't want to say exactly how often some- thing happens, you can say from time to time."
+    ]
+  },
+  {
+    "group": "Express irritation. Respond to it - Phrases to complain",
+    "phrases": [
+      "It gets on my nerves.",
+      "I'm angry with you for...",
+      "It bothers me.",
+      "It drives me crazy.",
+      "I want to complain about...",
+      "It drives me up the wall.",
+      "It's so frustrating!",
+      "It really annoys me.",
+      "It bugs me."
+    ]
+  },
+  {
+    "group": "Express irritation. Respond to it - Phrases to respond",
+    "phrases": [
+      "Give it a rest.",
+      "I feel so bad about...",
+      "Stop nagging me.",
+      "Why are you whining again?",
+      "Let me apologize for...",
+      "I'm so sorry for...",
+      "Get off my back.",
+      "Please, accept my apology for...",
+      "Stop always complaining...",
+      "I regret doing it"
+    ]
+  }
+]

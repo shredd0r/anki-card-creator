@@ -6,7 +6,7 @@ import (
 
 	"github.com/shredd0r/anki-card-creator/card"
 	"github.com/shredd0r/anki-card-creator/config"
-	"github.com/shredd0r/anki-card-creator/extractors"
+	"github.com/shredd0r/anki-card-creator/extractor"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -18,10 +18,10 @@ type AnkiCardCreator struct {
 	logger          *slog.Logger
 	ankiService     AnkiService
 	cardCreator     card.FlashcardCreator
-	targetExtractor extractors.TargetExtractor
+	targetExtractor extractor.Target
 }
 
-func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService AnkiService, cardCreator card.FlashcardCreator, targetExtractor extractors.TargetExtractor) *AnkiCardCreator {
+func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService AnkiService, cardCreator card.FlashcardCreator, targetExtractor extractor.Target) *AnkiCardCreator {
 	queueSize := default_batch_size
 
 	if cfg.QueueSize != 0 {
@@ -42,7 +42,7 @@ func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService Anki
 // - noncritical - when this error returns, workflow continue, add not stored target for some pull and return aka "not generated"
 func (c *AnkiCardCreator) Create(ctx context.Context, pathToTargets string) error {
 	c.logger.Info("start creating flashcard and store it in anki")
-	targets, err := c.targetExtractor.GetTargetsFromFile(ctx, pathToTargets)
+	targets, err := c.targetExtractor.GetFromDir(ctx, pathToTargets)
 	if err != nil {
 		return err
 	}
@@ -57,6 +57,7 @@ func (c *AnkiCardCreator) Create(ctx context.Context, pathToTargets string) erro
 				defer func() { <-chanQueue }()
 				chanQueue <- true
 				c.logger.Info("start creating flashcard", slog.Any("subject", subject))
+				// This method return only critical error, thats why checking unessecery
 				isExist, err := c.ankiService.IsCardAlreadyExist(ctx, subject, target.DeckName)
 				if err != nil {
 					return err

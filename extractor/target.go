@@ -1,4 +1,4 @@
-package extractors
+package extractor
 
 import (
 	"context"
@@ -7,33 +7,37 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-
-	"github.com/shredd0r/anki-card-creator/models"
 )
 
-type TargetExtractor interface {
-	GetTargetsFromFile(ctx context.Context, pathToFile string) (*[]models.Target, error)
-	GetTargetsFromDir(ctx context.Context, pathToDir string) (*[]models.Target, error)
+type TargetInfo struct {
+	DeckName string    `json:"deckname"`
+	Tags     *[]string `json:"tags,omitempty"`
+	Subjects []string  `json:"subjects"`
+}
+
+type Target interface {
+	GetFromFile(ctx context.Context, pathToFile string) (*[]TargetInfo, error)
+	GetFromDir(ctx context.Context, pathToDir string) (*[]TargetInfo, error)
 }
 
 type implTargetExtractor struct {
 	logger *slog.Logger
 }
 
-func NewTargetExtractor(logger *slog.Logger) TargetExtractor {
+func NewTargetExtractor(logger *slog.Logger) Target {
 	return &implTargetExtractor{
 		logger: logger.WithGroup("target-extractor"),
 	}
 }
 
-func (e *implTargetExtractor) GetTargetsFromFile(ctx context.Context, pathToFile string) (*[]models.Target, error) {
+func (e *implTargetExtractor) GetFromFile(ctx context.Context, pathToFile string) (*[]TargetInfo, error) {
 	bytesOfReadedFile, err := os.ReadFile(pathToFile)
 	if err != nil {
 		e.logger.Error("failed read file with targets")
 		return nil, err
 	}
 
-	var listOfTargets []models.Target
+	var listOfTargets []TargetInfo
 	err = json.Unmarshal(bytesOfReadedFile, &listOfTargets)
 	if err != nil {
 		e.logger.Error("failed unmarshal file bytes to json")
@@ -43,8 +47,8 @@ func (e *implTargetExtractor) GetTargetsFromFile(ctx context.Context, pathToFile
 	return &listOfTargets, nil
 }
 
-func (e *implTargetExtractor) GetTargetsFromDir(ctx context.Context, pathToDir string) (*[]models.Target, error) {
-	listOfTargets := []models.Target{}
+func (e *implTargetExtractor) GetFromDir(ctx context.Context, pathToDir string) (*[]TargetInfo, error) {
+	listOfTargets := []TargetInfo{}
 
 	innerFiles, err := os.ReadDir(pathToDir)
 	if err != nil {
@@ -53,14 +57,14 @@ func (e *implTargetExtractor) GetTargetsFromDir(ctx context.Context, pathToDir s
 	}
 	for _, innerFile := range innerFiles {
 		if innerFile.IsDir() {
-			targets, err := e.GetTargetsFromDir(ctx, fmt.Sprintf("%s/%s", pathToDir, innerFile.Name()))
+			targets, err := e.GetFromDir(ctx, fmt.Sprintf("%s/%s", pathToDir, innerFile.Name()))
 			if err != nil {
 				return nil, err
 			}
 			listOfTargets = append(listOfTargets, *targets...)
 		} else {
 			if strings.Contains(innerFile.Name(), ".json") {
-				targets, err := e.GetTargetsFromFile(ctx, fmt.Sprintf("%s/%s", pathToDir, innerFile.Name()))
+				targets, err := e.GetFromFile(ctx, fmt.Sprintf("%s/%s", pathToDir, innerFile.Name()))
 				if err != nil {
 					return nil, err
 				}

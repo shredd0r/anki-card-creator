@@ -1,18 +1,17 @@
-package extractors
+package extractor
 
 import (
 	"context"
 	"log/slog"
 	"testing"
 
-	"github.com/shredd0r/anki-card-creator/models"
 	"github.com/stretchr/testify/assert"
 )
 
 type testCase struct {
 	Name             string
 	PathToTargets    string
-	CallTestesMethod func(context.Context, string) (*[]models.Target, error)
+	CallTestesMethod func(context.Context, string) (*[]TargetInfo, error)
 }
 
 func TestPositiveGetTargets(t *testing.T) {
@@ -23,12 +22,12 @@ func TestPositiveGetTargets(t *testing.T) {
 		{
 			Name:             "get targets from file",
 			PathToTargets:    "./../assets/test-targets.json",
-			CallTestesMethod: targetExtractor.GetTargetsFromFile,
+			CallTestesMethod: targetExtractor.GetFromFile,
 		},
 		{
 			Name:             "get targets from directory",
 			PathToTargets:    "./../assets",
-			CallTestesMethod: targetExtractor.GetTargetsFromDir,
+			CallTestesMethod: targetExtractor.GetFromDir,
 		},
 	}
 
@@ -37,7 +36,7 @@ func TestPositiveGetTargets(t *testing.T) {
 			targets, err := testcase.CallTestesMethod(t.Context(), testcase.PathToTargets)
 
 			assert.Nil(t, err)
-			assert.Equal(t, []models.Target{
+			assert.Equal(t, []TargetInfo{
 				{
 					DeckName: "deckname-1",
 					Subjects: []string{
@@ -64,17 +63,17 @@ func TestNegativeCases(t *testing.T) {
 		{
 			Name:             "not exist file",
 			PathToTargets:    "./not-exist-file.json",
-			CallTestesMethod: targetExtractor.GetTargetsFromFile,
+			CallTestesMethod: targetExtractor.GetFromFile,
 		},
 		{
 			Name:             "not exist dir",
 			PathToTargets:    "./not-exist-dir",
-			CallTestesMethod: targetExtractor.GetTargetsFromDir,
+			CallTestesMethod: targetExtractor.GetFromDir,
 		},
 		{
 			Name:             "file not json",
 			PathToTargets:    "./../assets/jpg-file.jpg",
-			CallTestesMethod: targetExtractor.GetTargetsFromFile,
+			CallTestesMethod: targetExtractor.GetFromFile,
 		},
 	}
 

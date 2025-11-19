@@ -1,6 +1,6 @@
-package providers
+package google
 
-//go:generate mockgen -source google_image.go -destination mock/google_image_mock.go
+//go:generate mockgen -source image.go -destination mock/image_mock.go
 
 import (
 	"context"
@@ -23,43 +23,44 @@ const (
 
 var errIndexOutOfRange = errors.New("index out of range")
 
-type GoogleImageProvider interface {
-	// Return struct where you can sort through images on page
-	NewQuery(ctx context.Context, searchQuery string) (GoogleImageQueryProvider, error)
+// Image - interface for access to make request to searching image by query
+type Image interface {
+	// Request - create struct where you can sort through images on page
+	Request(ctx context.Context, searchQuery string) (Result, error)
 }
 
-type GoogleImageQueryProvider interface {
-	// Return image from opened web page
+type Result interface {
+	// Get - return image from opened web page
 	Get(ctx context.Context, numOfPicture uint) (*models.File, error)
 }
 
-func NewGoogleImageProvider(logger *slog.Logger, browser playwright.Browser, fileDownloader downloader.FileDownloader) GoogleImageProvider {
-	return &implGoogleImageProvider{
+func NewImageProvider(logger *slog.Logger, browser playwright.Browser, fileDownloader downloader.File) Image {
+	return &implImage{
 		logger:         logger.WithGroup("google-image-provider"),
 		browser:        browser,
 		fileDownloader: fileDownloader,
 	}
 }
 
-type implGoogleImageProvider struct {
+type implImage struct {
 	logger         *slog.Logger
 	browser        playwright.Browser
-	fileDownloader downloader.FileDownloader
+	fileDownloader downloader.File
 }
 
-type implGoogleImageQueryProvider struct {
+type implResult struct {
 	logger         *slog.Logger
 	page           playwright.Page
-	fileDownloader downloader.FileDownloader
+	fileDownloader downloader.File
 }
 
-func (p *implGoogleImageProvider) NewQuery(ctx context.Context, searchQuery string) (GoogleImageQueryProvider, error) {
+func (p *implImage) Request(ctx context.Context, searchQuery string) (Result, error) {
 	page, err := p.moveToPageWithImages(searchQuery)
 	if err != nil {
 		return nil, err
 	}
 
-	return &implGoogleImageQueryProvider{
+	return &implResult{
 		logger:         p.logger,
 		page:           page,
 		fileDownloader: p.fileDownloader,
@@ -69,7 +70,7 @@ func (p *implGoogleImageProvider) NewQuery(ctx context.Context, searchQuery stri
 // Get - method for getting picture from Google Image. Picture returns as buffer reader, not saving in disk
 // numOfPicture - index for getting picture from list of matched pictures
 // searchQuery - query for searching pictures
-func (p *implGoogleImageQueryProvider) Get(ctx context.Context, numOfPicture uint) (*models.File, error) {
+func (p *implResult) Get(ctx context.Context, numOfPicture uint) (*models.File, error) {
 	defer func() {
 		err := p.page.Close()
 		if err != nil {
@@ -115,7 +116,7 @@ func (p *implGoogleImageQueryProvider) Get(ctx context.Context, numOfPicture uin
 	return p.fileDownloader.Download(ctx, imgUrl)
 }
 
-func (p *implGoogleImageProvider) moveToPageWithImages(search string) (playwright.Page, error) {
+func (p *implImage) moveToPageWithImages(search string) (playwright.Page, error) {
 	page, err := p.browser.NewPage()
 	if err != nil {
 		p.logger.Error("failed create new page", slog.Any("err", err.Error()))
@@ -170,7 +171,7 @@ func (p *implGoogleImageProvider) moveToPageWithImages(search string) (playwrigh
 	return page, nil
 }
 
-func (p *implGoogleImageQueryProvider) getUrlToImage(page playwright.Page, selectorToDetailView string) (string, error) {
+func (p *implResult) getUrlToImage(page playwright.Page, selectorToDetailView string) (string, error) {
 	imgViewLocator := page.Locator(selectorToDetailView).First()
 	imgUrl, err := imgViewLocator.GetAttribute("src")
 	if err != nil {

@@ -1,6 +1,4 @@
-package providers
-
-//go:generate mockgen -source gemini.go -destination mock/gemini_mock.go
+package llm
 
 import (
 	"context"
@@ -17,10 +15,7 @@ import (
 	"google.golang.org/genai"
 )
 
-var (
-	errServerIsOverload = errors.New("gemini server is overload")
-	errQuotaIsOver      = errors.New("quota for requests is over")
-)
+var notSupportedMIMEType = errors.New("unsupported MIME type")
 
 const (
 	model_for_generate_text = "gemini-2.5-flash" //free model
@@ -32,13 +27,8 @@ type ratingPictureResponse struct {
 	Analysis string
 }
 
-type GeminiProvider interface {
-	GenerateCardContent(ctx context.Context, subject string, usingContext *[]string) (*models.GeminiCard, error)
-	RatingPicture(ctx context.Context, subject string, picture *models.File) (*uint, error)
-}
-
-func NewGeminiProvider(logger *slog.Logger, client *genai.Client) GeminiProvider {
-	return &implGeminiProvider{
+func NewGemini(logger *slog.Logger, client *genai.Client) Provider {
+	return &implGemini{
 		logger: logger,
 		client: client,
 		cfgForGenerateContentCard: &genai.GenerateContentConfig{
@@ -91,7 +81,7 @@ func NewGeminiProvider(logger *slog.Logger, client *genai.Client) GeminiProvider
 	}
 }
 
-type implGeminiProvider struct {
+type implGemini struct {
 	logger                    *slog.Logger
 	client                    *genai.Client
 	cfgForGenerateContentCard *genai.GenerateContentConfig
@@ -101,7 +91,7 @@ type implGeminiProvider struct {
 // GenerateCardContent generate content for subject. 'usingContext' means that context where is used this subject.
 // For example word "starter" is used in context ["food", "cafe", "dish"]
 // 'usingContext' can be nil
-func (p *implGeminiProvider) GenerateCardContent(ctx context.Context, subject string, usingContext *[]string) (*models.GeminiCard, error) {
+func (p *implGemini) GenerateCardContent(ctx context.Context, subject string, usingContext *[]string) (*GeneratedCardContent, error) {
 	result, err := p.client.Models.GenerateContent(
 		ctx,
 		model_for_generate_text,
@@ -114,7 +104,7 @@ func (p *implGeminiProvider) GenerateCardContent(ctx context.Context, subject st
 		return nil, p.wrapError(err)
 	}
 
-	var geminiCard models.GeminiCard
+	var geminiCard GeneratedCardContent
 	geminiCardStr := result.Text()
 	err = json.Unmarshal([]byte(geminiCardStr), &geminiCard)
 	if err != nil {
@@ -127,8 +117,13 @@ func (p *implGeminiProvider) GenerateCardContent(ctx context.Context, subject st
 
 // RatingPicture - method for send request to gemini backend, which checking how suitable is this picture for describe the subject.
 // I am using rating picture approach, because free gemini api access allows send image. Generation is not allowed.
-func (p *implGeminiProvider) RatingPicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
+func (p *implGemini) RatingPicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
 	p.logger.Debug("start method 'RatingPicture'")
+
+	// skip picture with mimetype svg, because this type not supported gemini server
+	if picture.MIMEType == "image/svg+xml" {
+		return nil, notSupportedMIMEType
+	}
 
 	// Put to contents subject for compare and bytes of picture
 	contents := []*genai.Content{
@@ -163,7 +158,7 @@ func (p *implGeminiProvider) RatingPicture(ctx context.Context, subject string, 
 	return &response.Rating, nil
 }
 
-func (p *implGeminiProvider) wrapError(err error) error {
+func (p *implGemini) wrapError(err error) error {
 	if !errors.As(err, &genai.APIError{}) {
 		return err
 	}
@@ -177,14 +172,14 @@ func (p *implGeminiProvider) wrapError(err error) error {
 		}
 	case http.StatusTooManyRequests:
 		{
-			return errQuotaIsOver
+			return errServerIsOverload
 		}
 	default:
 		return err
 	}
 }
 
-func (p *implGeminiProvider) getContentTextForRequest(subject string, usingContext *[]string) string {
+func (p *implGemini) getContentTextForRequest(subject string, usingContext *[]string) string {
 	if usingContext != nil {
 		return fmt.Sprintf("{'subject': '%s', 'using-context': '%s'}", subject, strings.Join(*usingContext, ", "))
 	}
@@ -196,23 +191,23 @@ type callMethodTask struct {
 	method       func() error
 }
 
-// rateLimitGeminiProvider decorator for GeminiProvider, which calculate using quota for all requests and wait for new tokens if it is out.
+// rateLimitGemini decorator for Gemini, which calculate using quota for all requests and wait for new tokens if it is out.
 // Add calls to queue if quota is out and wait for new one
-type rateLimitGeminiProvider struct {
+type rateLimitGemini struct {
 	mt                        sync.Mutex
 	isStartedMinutePeriodChan chan struct{}
 	activeTaskChan            chan struct{}
 
-	logger   *slog.Logger
-	provider GeminiProvider
+	logger         *slog.Logger
+	geminiProvider Provider
 }
 
-func NewRateLimitGeminiProvider(ctx context.Context, logger *slog.Logger, client *genai.Client) GeminiProvider {
-	provider := &rateLimitGeminiProvider{
+func NewRateLimitGemini(ctx context.Context, logger *slog.Logger, client *genai.Client) Provider {
+	provider := &rateLimitGemini{
 		logger:                    logger,
 		activeTaskChan:            make(chan struct{}, rpm),
 		isStartedMinutePeriodChan: make(chan struct{}, 1),
-		provider:                  NewGeminiProvider(logger, client),
+		geminiProvider:            NewGemini(logger, client),
 	}
 
 	return provider
@@ -222,13 +217,13 @@ func NewRateLimitGeminiProvider(ctx context.Context, logger *slog.Logger, client
 // For example word "starter" is used in context ["food", "cafe", "dish"]
 // 'usingContext' can be nil
 // Calling this method start process for calculate requesting per minutes for all calls to gemini backend
-func (p *rateLimitGeminiProvider) GenerateCardContent(ctx context.Context, subject string, usingContext *[]string) (*models.GeminiCard, error) {
-	var geminiCard *models.GeminiCard
+func (p *rateLimitGemini) GenerateCardContent(ctx context.Context, subject string, usingContext *[]string) (*GeneratedCardContent, error) {
+	var geminiCard *GeneratedCardContent
 
 	generateContentCardTask := callMethodTask{
 		nameOfMethod: "GenerateCardContent",
 		method: func() error {
-			geminiCardResp, err := p.provider.GenerateCardContent(ctx, subject, usingContext)
+			geminiCardResp, err := p.geminiProvider.GenerateCardContent(ctx, subject, usingContext)
 			geminiCard = geminiCardResp
 			return err
 		},
@@ -244,13 +239,13 @@ func (p *rateLimitGeminiProvider) GenerateCardContent(ctx context.Context, subje
 
 // RatingPicture - method for send request to gemini backend, which checking how suitable is this picture for describe the subject.
 // Calling this method start process for calculate requesting per minutes for all calls to gemini backend
-func (p *rateLimitGeminiProvider) RatingPicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
+func (p *rateLimitGemini) RatingPicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
 	var rating *uint
 
 	generateExplainTask := callMethodTask{
 		nameOfMethod: "RatingPicture",
 		method: func() error {
-			ratingResp, err := p.provider.RatingPicture(ctx, subject, picture)
+			ratingResp, err := p.geminiProvider.RatingPicture(ctx, subject, picture)
 			rating = ratingResp
 			return err
 		},
@@ -264,7 +259,7 @@ func (p *rateLimitGeminiProvider) RatingPicture(ctx context.Context, subject str
 	return rating, nil
 }
 
-func (p *rateLimitGeminiProvider) callProviderMethod(ctx context.Context, providersMethodTask callMethodTask) error {
+func (p *rateLimitGemini) callProviderMethod(ctx context.Context, providersMethodTask callMethodTask) error {
 	p.logger.Debug("start waiting for new slot in active task channel", slog.Any("method", providersMethodTask.nameOfMethod))
 	select {
 	case <-ctx.Done():
@@ -283,7 +278,7 @@ func (p *rateLimitGeminiProvider) callProviderMethod(ctx context.Context, provid
 
 // This method calls every time when calls one of provider`s method,
 // because minute timer need start only after first request to gemini
-func (p *rateLimitGeminiProvider) tryStartNewRequestPeriod(ctx context.Context) {
+func (p *rateLimitGemini) tryStartNewRequestPeriod(ctx context.Context) {
 	p.mt.Lock()
 	defer p.mt.Unlock()
 

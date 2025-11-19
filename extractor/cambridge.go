@@ -1,4 +1,4 @@
-package extractors
+package extractor
 
 //go:generate mockgen -source cambridge.go -destination mock/cambridge_mock.go
 
@@ -32,27 +32,35 @@ const (
 	selector_for_pronunciation_cambridge = "#audio2 > source:nth-child(3)"
 )
 
-type CambridgeCardExtractor interface {
+type CambridgeCard struct {
+	Subject       string
+	Pronunciation *models.File // Can be nil, if subject is phrase
+	Transcription *string      //
+	Explains      []string
+	Examples      []string
+}
+
+type Cambridge interface {
 	GetExplains(ctx context.Context, subject string) (*[]string, error)
 	GetTransacription(ctx context.Context, subject string) (*string, error)
-	GetCard(ctx context.Context, subject string) (*models.CambridgeCard, error)
+	GetCard(ctx context.Context, subject string) (*CambridgeCard, error)
 }
 
-type implCambridgeCardExtractor struct {
+type implCambridge struct {
 	logger         *slog.Logger
 	browser        playwright.Browser
-	fileDownloader downloader.FileDownloader
+	fileDownloader downloader.File
 }
 
-func NewCambridgeCardExtractor(logger *slog.Logger, browser playwright.Browser, fileDownloader downloader.FileDownloader) CambridgeCardExtractor {
-	return &implCambridgeCardExtractor{
+func NewCambridge(logger *slog.Logger, browser playwright.Browser, fileDownloader downloader.File) Cambridge {
+	return &implCambridge{
 		logger:         logger,
 		browser:        browser,
 		fileDownloader: fileDownloader,
 	}
 }
 
-func (e *implCambridgeCardExtractor) GetExplains(ctx context.Context, subject string) (*[]string, error) {
+func (e *implCambridge) GetExplains(ctx context.Context, subject string) (*[]string, error) {
 	select {
 	case <-ctx.Done():
 		{
@@ -74,7 +82,7 @@ func (e *implCambridgeCardExtractor) GetExplains(ctx context.Context, subject st
 	}
 }
 
-func (e *implCambridgeCardExtractor) GetTransacription(ctx context.Context, subject string) (*string, error) {
+func (e *implCambridge) GetTransacription(ctx context.Context, subject string) (*string, error) {
 	select {
 	case <-ctx.Done():
 		{
@@ -96,7 +104,7 @@ func (e *implCambridgeCardExtractor) GetTransacription(ctx context.Context, subj
 	}
 }
 
-func (e *implCambridgeCardExtractor) GetCard(ctx context.Context, subject string) (*models.CambridgeCard, error) {
+func (e *implCambridge) GetCard(ctx context.Context, subject string) (*CambridgeCard, error) {
 	e.logger.Debug(fmt.Sprintf("start get card for subject: %s", subject))
 
 	subjectType := utils.GetSubjectType(subject)
@@ -144,7 +152,7 @@ func (e *implCambridgeCardExtractor) GetCard(ctx context.Context, subject string
 		return nil, err
 	}
 
-	return &models.CambridgeCard{
+	return &CambridgeCard{
 		Subject:       subject,
 		Transcription: transcription,
 		Pronunciation: pronunciation,
@@ -153,7 +161,7 @@ func (e *implCambridgeCardExtractor) GetCard(ctx context.Context, subject string
 	}, nil
 }
 
-func (e *implCambridgeCardExtractor) gotoSubjectPage(ctx context.Context, subject string) (playwright.Page, error) {
+func (e *implCambridge) gotoSubjectPage(ctx context.Context, subject string) (playwright.Page, error) {
 	select {
 	case <-ctx.Done():
 		{
@@ -206,7 +214,7 @@ func (e *implCambridgeCardExtractor) gotoSubjectPage(ctx context.Context, subjec
 	}
 }
 
-func (e *implCambridgeCardExtractor) getTransacription(ctx context.Context, mainPageLocator playwright.Locator) (*string, error) {
+func (e *implCambridge) getTransacription(ctx context.Context, mainPageLocator playwright.Locator) (*string, error) {
 	e.logger.Debug("start get transcription from cambridge page")
 	select {
 	case <-ctx.Done():
@@ -227,18 +235,18 @@ func (e *implCambridgeCardExtractor) getTransacription(ctx context.Context, main
 	}
 }
 
-func (e *implCambridgeCardExtractor) getExplains(ctx context.Context, mainPageLocator playwright.Locator) (*[]string, error) {
+func (e *implCambridge) getExplains(ctx context.Context, mainPageLocator playwright.Locator) (*[]string, error) {
 	e.logger.Debug("start get explains from cambridge page")
 	return e.getAllStringsBySelector(ctx, mainPageLocator, selector_for_explain_cambridge, 3)
 }
 
-func (e *implCambridgeCardExtractor) getExamples(ctx context.Context, mainPageLocator playwright.Locator) (*[]string, error) {
+func (e *implCambridge) getExamples(ctx context.Context, mainPageLocator playwright.Locator) (*[]string, error) {
 	e.logger.Debug("start get examples from cambridge page")
 	return e.getAllStringsBySelector(ctx, mainPageLocator, selector_for_example_cambridge, 5)
 }
 
 // getAllStringsBySelector return all inner text from found locators by selector
-func (e *implCambridgeCardExtractor) getAllStringsBySelector(ctx context.Context, mainPageLocator playwright.Locator, selector string, maxCount uint8) (*[]string, error) {
+func (e *implCambridge) getAllStringsBySelector(ctx context.Context, mainPageLocator playwright.Locator, selector string, maxCount uint8) (*[]string, error) {
 	select {
 	case <-ctx.Done():
 		{
@@ -287,7 +295,7 @@ func (e *implCambridgeCardExtractor) getAllStringsBySelector(ctx context.Context
 
 }
 
-func (e *implCambridgeCardExtractor) getPronunciation(ctx context.Context, mainPageLocator playwright.Locator) (*models.File, error) {
+func (e *implCambridge) getPronunciation(ctx context.Context, mainPageLocator playwright.Locator) (*models.File, error) {
 	pronunciationFileLocator := mainPageLocator.Locator(selector_for_pronunciation_cambridge)
 	pronunciationFilePath, err := pronunciationFileLocator.GetAttribute("src")
 	if err != nil {
@@ -313,7 +321,7 @@ func (e *implCambridgeCardExtractor) getPronunciation(ctx context.Context, mainP
 	return e.fileDownloader.Download(ctx, pronunciationFileUrl)
 }
 
-func (e *implCambridgeCardExtractor) getInnerTextFromChild(parentLocator playwright.Locator, selector string) (*string, error) {
+func (e *implCambridge) getInnerTextFromChild(parentLocator playwright.Locator, selector string) (*string, error) {
 	childLocator := parentLocator.Locator(selector).First()
 	innerText, err := childLocator.InnerText()
 	if err != nil {

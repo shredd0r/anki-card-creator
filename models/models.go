@@ -16,12 +16,6 @@ const (
 	EnglishLevelB1   = 1
 )
 
-type Target struct {
-	DeckName string    `json:"deckname"`
-	Tags     *[]string `json:"tags,omitempty"`
-	Subjects []string  `json:"subjects"`
-}
-
 type File struct {
 	Content  []byte
 	MIMEType string
@@ -45,18 +39,4 @@ type CardContent struct {
 	Pronunciation *File
 	Examples      []string
 	Synonyms      []string
-}
-
-type GeminiCard struct {
-	Paraphrase string   `json:"paraphrase"`
-	Examples   []string `json:"examples"`
-	Synonyms   []string `json:"synonyms"`
-}
-
-type CambridgeCard struct {
-	Subject       string
-	Pronunciation *File   // Can be nil, if subject is phrase
-	Transcription *string //
-	Explains      []string
-	Examples      []string
 }

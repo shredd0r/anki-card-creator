@@ -4,30 +4,30 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
-	"sync"
 	"testing"
 
-	mock_fetchers "github.com/shredd0r/anki-card-creator/card/fetchers/mock"
+	mock_fetcher "github.com/shredd0r/anki-card-creator/card/fetcher/mock"
 	"github.com/shredd0r/anki-card-creator/config"
+	mock_google "github.com/shredd0r/anki-card-creator/google/mock"
+	mock_llm "github.com/shredd0r/anki-card-creator/llm/mock"
 	"github.com/shredd0r/anki-card-creator/models"
-	mock_providers "github.com/shredd0r/anki-card-creator/providers/mock"
 	"github.com/shredd0r/anki-card-creator/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
 
-type funcForCreateCardContentComponentFether func(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetchers.MockCardContentComponentFetcher
-type geminiProviderExpectedCalls func(subject string, usingContext *[]string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider)
-type googleImageProviderExpectedCalls func(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_providers.MockGoogleImageProvider)
-type cardContentComponentFetcherFactoryExpectedCalls func(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetchers.MockCardContentComponentFetcherFactory)
+type funcForCreateCardContentComponentFether func(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetcher.MockCardContent
+type llmProviderExpectedCalls func(subject string, usingContext *[]string, cfg config.PictureConfig, gp *mock_llm.MockProvider)
+type googleImageProviderExpectedCalls func(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage)
+type cardContentFetcherFactoryExpectedCalls func(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory)
 
 type positiveCase struct {
-	Name                                            string
-	UsingContextForFlashcard                        *[]string
-	ExpectedFlashcard                               *models.Flashcard
-	geminiProviderExpectedCalls                     geminiProviderExpectedCalls
-	googleImageProviderExpectedCalls                googleImageProviderExpectedCalls
-	cardContentComponentFetcherFactoryExpectedCalls cardContentComponentFetcherFactoryExpectedCalls
+	Name                                   string
+	UsingContextForFlashcard               *[]string
+	ExpectedFlashcard                      *models.Flashcard
+	llmProviderExpectedCalls               llmProviderExpectedCalls
+	googleImageProviderExpectedCalls       googleImageProviderExpectedCalls
+	cardContentFetcherFactoryExpectedCalls cardContentFetcherFactoryExpectedCalls
 }
 
 func TestPositiveCases(t *testing.T) {
@@ -46,9 +46,9 @@ func TestPositiveCases(t *testing.T) {
 				Pronunciation: &models.File{},
 				Picture:       &models.File{},
 			},
-			geminiProviderExpectedCalls:                     geminiProviderExpectedCallsForRatingPicture,
-			googleImageProviderExpectedCalls:                googleImageProviderExpectedCallsForGetOnePicture,
-			cardContentComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
+			llmProviderExpectedCalls:               llmProviderExpectedCallsForRatingPicture,
+			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsForGetOnePicture,
+			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
 		},
 		{
 			Name:                     "create new flashcard for phrase",
@@ -60,9 +60,9 @@ func TestPositiveCases(t *testing.T) {
 				Examples:    []string{"phrase-example"},
 				Paraphrase:  "phrase-explain",
 			},
-			geminiProviderExpectedCalls:                     geminiProviderWithoutExpectdCalls,
-			googleImageProviderExpectedCalls:                googleImageProviderWithoutExpectdCalls,
-			cardContentComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
+			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
+			googleImageProviderExpectedCalls:       googleImageProviderWithoutExpectdCalls,
+			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
 		},
 		{
 			Name:                     "create new flashcard without using context",
@@ -74,9 +74,9 @@ func TestPositiveCases(t *testing.T) {
 				Examples:    []string{"phrase-example"},
 				Paraphrase:  "phrase-explain",
 			},
-			geminiProviderExpectedCalls:                     geminiProviderWithoutExpectdCalls,
-			googleImageProviderExpectedCalls:                googleImageProviderWithoutExpectdCalls,
-			cardContentComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
+			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
+			googleImageProviderExpectedCalls:       googleImageProviderWithoutExpectdCalls,
+			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
 		},
 		{
 			Name:                     "not found matched image",
@@ -91,9 +91,9 @@ func TestPositiveCases(t *testing.T) {
 				Pronunciation: &models.File{},
 				Picture:       nil,
 			},
-			geminiProviderExpectedCalls:                     geminiProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed,
-			googleImageProviderExpectedCalls:                googleImageProviderExpectedCallsWhereUseAllAttempts,
-			cardContentComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
+			llmProviderExpectedCalls:               llmProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed,
+			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsWhereUseAllAttempts,
+			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
 		},
 	}
 
@@ -106,13 +106,13 @@ func TestPositiveCases(t *testing.T) {
 	}
 	for _, testcase := range testcases {
 		t.Run(testcase.Name, func(t *testing.T) {
-			gp := mock_providers.NewMockGeminiProvider(ctrl)
-			gip := mock_providers.NewMockGoogleImageProvider(ctrl)
-			cccf := mock_fetchers.NewMockCardContentComponentFetcherFactory(ctrl)
+			gp := mock_llm.NewMockProvider(ctrl)
+			gip := mock_google.NewMockImage(ctrl)
+			cccf := mock_fetcher.NewMockCardContentFactory(ctrl)
 
-			testcase.geminiProviderExpectedCalls(testcase.ExpectedFlashcard.Subject, testcase.UsingContextForFlashcard, cfg, gp)
+			testcase.llmProviderExpectedCalls(testcase.ExpectedFlashcard.Subject, testcase.UsingContextForFlashcard, cfg, gp)
 			testcase.googleImageProviderExpectedCalls(testcase.ExpectedFlashcard.Subject, testcase.UsingContextForFlashcard, cfg, ctrl, gip)
-			testcase.cardContentComponentFetcherFactoryExpectedCalls(testcase.ExpectedFlashcard, testcase.UsingContextForFlashcard, ctrl, cccf)
+			testcase.cardContentFetcherFactoryExpectedCalls(testcase.ExpectedFlashcard, testcase.UsingContextForFlashcard, ctrl, cccf)
 
 			c := NewFlashcardCreator(cfg, logger, gp, gip, cccf)
 
@@ -125,48 +125,48 @@ func TestPositiveCases(t *testing.T) {
 }
 
 type negativeCase struct {
-	Name                                            string
-	Subject                                         string
-	ExpectedErrMessage                              string
-	geminiProviderExpectedCalls                     geminiProviderExpectedCalls
-	googleImageProviderExpectedCalls                googleImageProviderExpectedCalls
-	cardContentComponentFetcherFactoryExpectedCalls cardContentComponentFetcherFactoryExpectedCalls
+	Name                                   string
+	Subject                                string
+	ExpectedErrMessage                     string
+	llmProviderExpectedCalls               llmProviderExpectedCalls
+	googleImageProviderExpectedCalls       googleImageProviderExpectedCalls
+	cardContentFetcherFactoryExpectedCalls cardContentFetcherFactoryExpectedCalls
 }
 
 func TestNegativeCases(t *testing.T) {
 	usingContexForTest := &[]string{"using-context"}
 	testcases := []negativeCase{
 		{
-			Name:                             "error from get card content method",
-			Subject:                          "err-card-content",
-			ExpectedErrMessage:               "error from card component component fetcher",
-			geminiProviderExpectedCalls:      geminiProviderExpectedCallsForRatingPicture,
-			googleImageProviderExpectedCalls: googleImageProviderExpectedCallsForGetOnePicture,
-			cardContentComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetCardContentMethodReturnErr,
+			Name:                                   "error from get card content method",
+			Subject:                                "err-card-content",
+			ExpectedErrMessage:                     "error from card content fetcher",
+			llmProviderExpectedCalls:               llmProviderExpectedCallsForRatingPicture,
+			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsForGetOnePicture,
+			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetCardContentMethodReturnErr,
 		},
 		{
-			Name:                             "unsupported subjectType",
-			Subject:                          "test-subject",
-			ExpectedErrMessage:               "unsupported subject type",
-			geminiProviderExpectedCalls:      geminiProviderWithoutExpectdCalls,
-			googleImageProviderExpectedCalls: googleImageProviderWithoutExpectdCalls,
-			cardContentComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereReturnUnsupportedSubjectTypeErr,
+			Name:                                   "unsupported subjectType",
+			Subject:                                "test-subject",
+			ExpectedErrMessage:                     "unsupported subject type",
+			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
+			googleImageProviderExpectedCalls:       googleImageProviderWithoutExpectdCalls,
+			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereReturnUnsupportedSubjectTypeErr,
 		},
 		{
-			Name:                             "gemini provider return err",
-			Subject:                          "test-subject",
-			ExpectedErrMessage:               "quota for requests is over",
-			geminiProviderExpectedCalls:      geminiProviderExpectedCallsWhereReturnErr,
-			googleImageProviderExpectedCalls: googleImageProviderExpectedCallsForGetOnePicture,
-			cardContentComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetPictureReturnErr,
+			Name:                                   "llm provider return err",
+			Subject:                                "test-subject",
+			ExpectedErrMessage:                     "request limit reached",
+			llmProviderExpectedCalls:               llmProviderExpectedCallsWhereReturnErr,
+			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsForGetOnePicture,
+			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetPictureReturnErr,
 		},
 		{
-			Name:                             "google image provider return err",
-			Subject:                          "test-subject",
-			ExpectedErrMessage:               "index out of range",
-			geminiProviderExpectedCalls:      geminiProviderWithoutExpectdCalls,
-			googleImageProviderExpectedCalls: googleImageProviderExpectedCallsWhereReturnErr,
-			cardContentComponentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetPictureReturnErr,
+			Name:                                   "google image provider return err",
+			Subject:                                "test-subject",
+			ExpectedErrMessage:                     "index out of range",
+			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
+			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsWhereReturnErr,
+			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetPictureReturnErr,
 		},
 	}
 
@@ -178,66 +178,59 @@ func TestNegativeCases(t *testing.T) {
 		MinimalRating:                7,
 	}
 
-	wg := sync.WaitGroup{}
 	for _, testcase := range testcases {
-		wg.Add(1)
 		t.Run(testcase.Name, func(t *testing.T) {
-			go func() {
-				defer wg.Done()
-				gp := mock_providers.NewMockGeminiProvider(ctrl)
-				gip := mock_providers.NewMockGoogleImageProvider(ctrl)
-				cccf := mock_fetchers.NewMockCardContentComponentFetcherFactory(ctrl)
+			gp := mock_llm.NewMockProvider(ctrl)
+			gip := mock_google.NewMockImage(ctrl)
+			cccf := mock_fetcher.NewMockCardContentFactory(ctrl)
 
-				testcase.geminiProviderExpectedCalls(testcase.Subject, usingContexForTest, cfg, gp)
-				testcase.googleImageProviderExpectedCalls(testcase.Subject, usingContexForTest, cfg, ctrl, gip)
-				testcase.cardContentComponentFetcherFactoryExpectedCalls(&models.Flashcard{
-					Subject:     testcase.Subject,
-					SubjectType: utils.GetSubjectType(testcase.Subject),
-				},
-					usingContexForTest,
-					ctrl, cccf)
+			testcase.llmProviderExpectedCalls(testcase.Subject, usingContexForTest, cfg, gp)
+			testcase.googleImageProviderExpectedCalls(testcase.Subject, usingContexForTest, cfg, ctrl, gip)
+			testcase.cardContentFetcherFactoryExpectedCalls(&models.Flashcard{
+				Subject:     testcase.Subject,
+				SubjectType: utils.GetSubjectType(testcase.Subject),
+			},
+				usingContexForTest,
+				ctrl, cccf)
 
-				c := NewFlashcardCreator(cfg, logger, gp, gip, cccf)
+			c := NewFlashcardCreator(cfg, logger, gp, gip, cccf)
 
-				flashcard, err := c.Create(t.Context(), "test-deckname", testcase.Subject, usingContexForTest)
-				assert.Nil(t, flashcard)
-				assert.EqualError(t, err, testcase.ExpectedErrMessage)
-			}()
+			flashcard, err := c.Create(t.Context(), "test-deckname", testcase.Subject, usingContexForTest)
+			assert.Nil(t, flashcard)
+			assert.EqualError(t, err, testcase.ExpectedErrMessage)
 		})
 	}
-
-	wg.Wait()
 }
 
-func geminiProviderExpectedCallsForRatingPicture(subject string, usingContext *[]string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider) {
-	gp.EXPECT().
+func llmProviderExpectedCallsForRatingPicture(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
+	llmp.EXPECT().
 		RatingPicture(gomock.Any(), subject, gomock.Any()).
 		Times(1).
 		Return(&cfg.MinimalRating, nil)
 }
 
-func geminiProviderWithoutExpectdCalls(subject string, usingContext *[]string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider) {
+func llmProviderWithoutExpectdCalls(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
 }
 
-func geminiProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed(subject string, usingContext *[]string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider) {
+func llmProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
 	rating := cfg.MinimalRating - 1
-	gp.
+	llmp.
 		EXPECT().
 		RatingPicture(gomock.Any(), subject, gomock.Any()).
 		Times(int(cfg.NumberOfAttemptRatingPicture)).
 		Return(&rating, nil)
 }
 
-func geminiProviderExpectedCallsWhereReturnErr(subject string, usingContext *[]string, cfg config.PictureConfig, gp *mock_providers.MockGeminiProvider) {
-	gp.
+func llmProviderExpectedCallsWhereReturnErr(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
+	llmp.
 		EXPECT().
 		RatingPicture(gomock.Any(), subject, gomock.Any()).
 		Times(1).
-		Return(nil, errors.New("quota for requests is over"))
+		Return(nil, errors.New("request limit reached"))
 }
 
-func googleImageProviderExpectedCallsForGetOnePicture(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_providers.MockGoogleImageProvider) {
-	qgip := mock_providers.NewMockGoogleImageQueryProvider(ctrl)
+func googleImageProviderExpectedCallsForGetOnePicture(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
+	qgip := mock_google.NewMockResult(ctrl)
 
 	qgip.
 		EXPECT().
@@ -247,10 +240,10 @@ func googleImageProviderExpectedCallsForGetOnePicture(subject string, usingConte
 	googleImageProviderExpectedCallNewQuery(subject, usingContext, gip, qgip)
 }
 
-func googleImageProviderWithoutExpectdCalls(subject string, usingContex *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_providers.MockGoogleImageProvider) {
+func googleImageProviderWithoutExpectdCalls(subject string, usingContex *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
 }
 
-func googleImageProviderExpectedCallNewQuery(subject string, usingContext *[]string, gip *mock_providers.MockGoogleImageProvider, qgip *mock_providers.MockGoogleImageQueryProvider) {
+func googleImageProviderExpectedCallNewQuery(subject string, usingContext *[]string, gip *mock_google.MockImage, qgip *mock_google.MockResult) {
 	query := subject
 	if usingContext != nil {
 		query += " " + strings.Join(*usingContext, ", ")
@@ -258,12 +251,12 @@ func googleImageProviderExpectedCallNewQuery(subject string, usingContext *[]str
 
 	gip.
 		EXPECT().
-		NewQuery(gomock.Any(), query).
+		Request(gomock.Any(), query).
 		Return(qgip, nil)
 }
 
-func googleImageProviderExpectedCallsWhereUseAllAttempts(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_providers.MockGoogleImageProvider) {
-	qgip := mock_providers.NewMockGoogleImageQueryProvider(ctrl)
+func googleImageProviderExpectedCallsWhereUseAllAttempts(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
+	qgip := mock_google.NewMockResult(ctrl)
 
 	for attempt := range cfg.NumberOfAttemptRatingPicture {
 		qgip.
@@ -276,8 +269,8 @@ func googleImageProviderExpectedCallsWhereUseAllAttempts(subject string, usingCo
 	googleImageProviderExpectedCallNewQuery(subject, usingContext, gip, qgip)
 }
 
-func googleImageProviderExpectedCallsWhereReturnErr(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_providers.MockGoogleImageProvider) {
-	qgip := mock_providers.NewMockGoogleImageQueryProvider(ctrl)
+func googleImageProviderExpectedCallsWhereReturnErr(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
+	qgip := mock_google.NewMockResult(ctrl)
 
 	qgip.
 		EXPECT().
@@ -289,15 +282,15 @@ func googleImageProviderExpectedCallsWhereReturnErr(subject string, usingContext
 
 }
 
-func fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetchers.MockCardContentComponentFetcherFactory) {
+func fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory) {
 	fetcherFactoryExpectedCallsWhereFetchersReturnBy(flashcard, usingContext, ctrl, cccf, mockCardContentComponentFetchersForFlashcard)
 }
 
-func fetcherFactoryExpectedCallsWhereGetCardContentMethodReturnErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetchers.MockCardContentComponentFetcherFactory) {
+func fetcherFactoryExpectedCallsWhereGetCardContentMethodReturnErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory) {
 	fetcherFactoryExpectedCallsWhereFetchersReturnBy(flashcard, usingContext, ctrl, cccf, mockCardContentComponentFetchersWithErr)
 }
 
-func fetcherFactoryExpectedCallsWhereFetchersReturnBy(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetchers.MockCardContentComponentFetcherFactory, funcForCreateFetherForFlashcard funcForCreateCardContentComponentFether) {
+func fetcherFactoryExpectedCallsWhereFetchersReturnBy(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory, funcForCreateFetherForFlashcard funcForCreateCardContentComponentFether) {
 	mockCardContentComponent := funcForCreateFetherForFlashcard(flashcard, usingContext, ctrl)
 
 	cccf.
@@ -307,7 +300,7 @@ func fetcherFactoryExpectedCallsWhereFetchersReturnBy(flashcard *models.Flashcar
 		Return(mockCardContentComponent, nil)
 }
 
-func fetcherFactoryExpectedCallsWhereReturnUnsupportedSubjectTypeErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetchers.MockCardContentComponentFetcherFactory) {
+func fetcherFactoryExpectedCallsWhereReturnUnsupportedSubjectTypeErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory) {
 	cccf.
 		EXPECT().
 		Get(gomock.Any()).
@@ -315,9 +308,9 @@ func fetcherFactoryExpectedCallsWhereReturnUnsupportedSubjectTypeErr(flashcard *
 		Return(nil, errors.New("unsupported subject type"))
 }
 
-// This method set in factory cardContentComponentMethod which expect any times to call all method of cardContentComponentMethod
-func fetcherFactoryExpectedCallsWhereGetPictureReturnErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetchers.MockCardContentComponentFetcherFactory) {
-	cardContentComponent := mock_fetchers.NewMockCardContentComponentFetcher(ctrl)
+// This method set in factory cardContentMethod which expect any times to call all method of cardContentMethod
+func fetcherFactoryExpectedCallsWhereGetPictureReturnErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory) {
+	cardContentComponent := mock_fetcher.NewMockCardContent(ctrl)
 
 	cardContentComponent.
 		EXPECT().
@@ -336,8 +329,8 @@ func fetcherFactoryExpectedCallsWhereGetPictureReturnErr(flashcard *models.Flash
 		Return(cardContentComponent, nil)
 }
 
-func mockCardContentComponentFetchersForFlashcard(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetchers.MockCardContentComponentFetcher {
-	cardContentComponent := mock_fetchers.NewMockCardContentComponentFetcher(ctrl)
+func mockCardContentComponentFetchersForFlashcard(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetcher.MockCardContent {
+	cardContentComponent := mock_fetcher.NewMockCardContent(ctrl)
 
 	cardContentComponent.
 		EXPECT().
@@ -360,8 +353,8 @@ func mockCardContentComponentFetchersForFlashcard(flashcard *models.Flashcard, u
 	return cardContentComponent
 }
 
-func mockCardContentComponentFetchersWithErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetchers.MockCardContentComponentFetcher {
-	cardContentComponent := mock_fetchers.NewMockCardContentComponentFetcher(ctrl)
+func mockCardContentComponentFetchersWithErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetcher.MockCardContent {
+	cardContentComponent := mock_fetcher.NewMockCardContent(ctrl)
 
 	cardContentComponent.
 		EXPECT().
@@ -373,7 +366,7 @@ func mockCardContentComponentFetchersWithErr(flashcard *models.Flashcard, usingC
 		EXPECT().
 		GetCardContent(gomock.Any(), flashcard.Subject, usingContext).
 		Times(1).
-		Return(nil, errors.New("error from card component component fetcher"))
+		Return(nil, errors.New("error from card content fetcher"))
 
 	return cardContentComponent
 }

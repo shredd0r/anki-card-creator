@@ -54,7 +54,7 @@ func TestPositiveDownloadFiles(t *testing.T) {
 	}
 
 	logger := slog.Default()
-	fileDownloader := NewFileDownloader(logger)
+	fileDownloader := NewFile(logger)
 
 	for _, tc := range testCases {
 		t.Run(tc.ExpectedFileName, func(t *testing.T) { positiveDownloadTestCase(t, &tc, fileDownloader) })
@@ -62,7 +62,7 @@ func TestPositiveDownloadFiles(t *testing.T) {
 	}
 }
 
-func positiveDownloadTestCase(t *testing.T, tc *testCase, fileDownloader FileDownloader) {
+func positiveDownloadTestCase(t *testing.T, tc *testCase, fileDownloader File) {
 	expectedFileBytes, err := os.ReadFile(fmt.Sprintf(format_path_to_directory_with_files, tc.ExpectedFileName))
 	assert.NoError(t, err)
 	assert.NotNil(t, expectedFileBytes)

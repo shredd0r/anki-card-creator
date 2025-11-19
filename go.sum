@@ -99,6 +99,8 @@ github.com/playwright-community/playwright-go v0.5200.0 h1:z/5LGuX2tBrg3ug1HupMX
 github.com/playwright-community/playwright-go v0.5200.0/go.mod h1:UnnyQZaqUOO5ywAZu60+N4EiWReUqX1MQBBA3Oofvf8=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+github.com/prathyushnallamothu/ollamago v1.0.0 h1:eJGomYOjz8uJ7Bm6EoiJ7J4PHgV0u0HIyzRl9qRdWXQ=
+github.com/prathyushnallamothu/ollamago v1.0.0/go.mod h1:sICFRT/XlSNqTBY015Dkp+6pijLVS7trn7ocXiF9FNY=
 github.com/privatesquare/bkst-go-utils v1.5.4 h1:05G3dpWd8A4fJ4VmWdPLarR9Sa/RIRu/5Eup525YBAQ=
 github.com/privatesquare/bkst-go-utils v1.5.4/go.mod h1:jMxG7EdnVJNJPtZB+qNjldiiylnYCFFX/t3wgGtyVB0=
 github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4/go.mod h1:xMI15A0UPsDsEKsMN9yxemIoYk6Tm2C1GtYGdfGttqA=

@@ -11,22 +11,22 @@ import (
 	"github.com/shredd0r/anki-card-creator/models"
 )
 
-type FileDownloader interface {
+type File interface {
 	Download(ctx context.Context, urlToFile string) (*models.File, error)
 }
 
-type implFileDownloader struct {
+type implFile struct {
 	logger *slog.Logger
 }
 
-func NewFileDownloader(logger *slog.Logger) FileDownloader {
-	return &implFileDownloader{
+func NewFile(logger *slog.Logger) File {
+	return &implFile{
 		logger: logger.WithGroup("file-downloader"),
 	}
 }
 
 // Download - method for downloading file by url, using http requests.
-func (d *implFileDownloader) Download(ctx context.Context, urlToFile string) (*models.File, error) {
+func (d *implFile) Download(ctx context.Context, urlToFile string) (*models.File, error) {
 	d.logger.Debug("start download file", slog.Any("url", urlToFile))
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, urlToFile, nil)
@@ -64,7 +64,7 @@ func (d *implFileDownloader) Download(ctx context.Context, urlToFile string) (*m
 	return file, nil
 }
 
-func (d *implFileDownloader) getMIMEType(responseHeader http.Header) string {
+func (d *implFile) getMIMEType(responseHeader http.Header) string {
 	d.logger.Debug("start getting type from content-type")
 	contentType := responseHeader.Get("content-type")
 	d.logger.Debug("received content type", slog.Any("content-type", contentType))
