@@ -1,4 +1,4 @@
-.env
 *_mock.go
+config.yaml
 #TODO REMOVE IT AFTER ADD SUPPORTING CONFIG FILE
 main.go 

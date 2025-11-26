@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -15,17 +14,12 @@ import (
 	"google.golang.org/genai"
 )
 
-var notSupportedMIMEType = errors.New("unsupported MIME type")
+var errNotSupportedMIMEType = errors.New("unsupported MIME type")
 
 const (
 	model_for_generate_text = "gemini-2.5-flash" //free model
 	rpm                     = 10                 //request per minute
 )
-
-type ratingPictureResponse struct {
-	Rating   uint
-	Analysis string
-}
 
 func NewGemini(logger *slog.Logger, client *genai.Client) Provider {
 	return &implGemini{
@@ -53,14 +47,7 @@ func NewGemini(logger *slog.Logger, client *genai.Client) Provider {
 					},
 				},
 			},
-			SystemInstruction: genai.NewContentFromText(
-				`I send you word or phrase or idiom, you should generate paraphrase, example of using and synonyms for this subject.
-				In examples you must highlighted in bold subject with html tag like: <b>{subject}</b>.
-				Max count of generated examples and synonyms have to be 5.
-				Min count of generated examples and synonyms have to be 3.
-				Paraphrase mustn't has this word, phrase, idiom. 
-				Result have to be concise, structured for easy reading.`,
-				genai.RoleUser),
+			SystemInstruction: genai.NewContentFromText(systemInstructionForCardContent, genai.RoleUser),
 		},
 		cfgForRatingPicture: &genai.GenerateContentConfig{
 			ResponseMIMEType: "application/json",
@@ -71,12 +58,7 @@ func NewGemini(logger *slog.Logger, client *genai.Client) Provider {
 					"analysis": {Type: genai.TypeString},
 				},
 			},
-			SystemInstruction: genai.NewContentFromText(
-				`You have to analyze this picture. 
-				Picture will be use for flashcard, the picture have to describe word, idiom, phrase. 
-				Word, idion or phrase can't be written on picture. 
-				You should give me rating between 1 - 10, where 10 its best match `,
-				genai.RoleUser),
+			SystemInstruction: genai.NewContentFromText(systemInstructionForRatePicture, genai.RoleUser),
 		},
 	}
 }
@@ -95,7 +77,7 @@ func (p *implGemini) GenerateCardContent(ctx context.Context, subject string, us
 	result, err := p.client.Models.GenerateContent(
 		ctx,
 		model_for_generate_text,
-		genai.Text(p.getContentTextForRequest(subject, usingContext)),
+		genai.Text(getPromptRequestBy(subject, usingContext)),
 		p.cfgForGenerateContentCard,
 	)
 
@@ -115,14 +97,14 @@ func (p *implGemini) GenerateCardContent(ctx context.Context, subject string, us
 	return &geminiCard, nil
 }
 
-// RatingPicture - method for send request to gemini backend, which checking how suitable is this picture for describe the subject.
+// RatePicture - method for send request to gemini backend, which checking how suitable is this picture for describe the subject.
 // I am using rating picture approach, because free gemini api access allows send image. Generation is not allowed.
-func (p *implGemini) RatingPicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
+func (p *implGemini) RatePicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
 	p.logger.Debug("start method 'RatingPicture'")
 
 	// skip picture with mimetype svg, because this type not supported gemini server
 	if picture.MIMEType == "image/svg+xml" {
-		return nil, notSupportedMIMEType
+		return nil, errNotSupportedMIMEType
 	}
 
 	// Put to contents subject for compare and bytes of picture
@@ -179,13 +161,6 @@ func (p *implGemini) wrapError(err error) error {
 	}
 }
 
-func (p *implGemini) getContentTextForRequest(subject string, usingContext *[]string) string {
-	if usingContext != nil {
-		return fmt.Sprintf("{'subject': '%s', 'using-context': '%s'}", subject, strings.Join(*usingContext, ", "))
-	}
-	return fmt.Sprintf("{'subject': '%s'}", subject)
-}
-
 type callMethodTask struct {
 	nameOfMethod string
 	method       func() error
@@ -237,15 +212,15 @@ func (p *rateLimitGemini) GenerateCardContent(ctx context.Context, subject strin
 	return geminiCard, nil
 }
 
-// RatingPicture - method for send request to gemini backend, which checking how suitable is this picture for describe the subject.
+// RatePicture - method for send request to gemini backend, which checking how suitable is this picture for describe the subject.
 // Calling this method start process for calculate requesting per minutes for all calls to gemini backend
-func (p *rateLimitGemini) RatingPicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
+func (p *rateLimitGemini) RatePicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
 	var rating *uint
 
 	generateExplainTask := callMethodTask{
-		nameOfMethod: "RatingPicture",
+		nameOfMethod: "RatePicture",
 		method: func() error {
-			ratingResp, err := p.geminiProvider.RatingPicture(ctx, subject, picture)
+			ratingResp, err := p.geminiProvider.RatePicture(ctx, subject, picture)
 			rating = ratingResp
 			return err
 		},

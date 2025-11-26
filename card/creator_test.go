@@ -101,8 +101,8 @@ func TestPositiveCases(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	cfg := config.PictureConfig{
-		NumberOfAttemptRatingPicture: 3,
-		MinimalRating:                7,
+		CountSearches: 3,
+		MinimalRating: 7,
 	}
 	for _, testcase := range testcases {
 		t.Run(testcase.Name, func(t *testing.T) {
@@ -174,8 +174,8 @@ func TestNegativeCases(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	cfg := config.PictureConfig{
-		NumberOfAttemptRatingPicture: 3,
-		MinimalRating:                7,
+		CountSearches: 3,
+		MinimalRating: 7,
 	}
 
 	for _, testcase := range testcases {
@@ -204,7 +204,7 @@ func TestNegativeCases(t *testing.T) {
 
 func llmProviderExpectedCallsForRatingPicture(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
 	llmp.EXPECT().
-		RatingPicture(gomock.Any(), subject, gomock.Any()).
+		RatePicture(gomock.Any(), subject, gomock.Any()).
 		Times(1).
 		Return(&cfg.MinimalRating, nil)
 }
@@ -216,15 +216,15 @@ func llmProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed(subject strin
 	rating := cfg.MinimalRating - 1
 	llmp.
 		EXPECT().
-		RatingPicture(gomock.Any(), subject, gomock.Any()).
-		Times(int(cfg.NumberOfAttemptRatingPicture)).
+		RatePicture(gomock.Any(), subject, gomock.Any()).
+		Times(int(cfg.CountSearches)).
 		Return(&rating, nil)
 }
 
 func llmProviderExpectedCallsWhereReturnErr(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
 	llmp.
 		EXPECT().
-		RatingPicture(gomock.Any(), subject, gomock.Any()).
+		RatePicture(gomock.Any(), subject, gomock.Any()).
 		Times(1).
 		Return(nil, errors.New("request limit reached"))
 }
@@ -258,7 +258,7 @@ func googleImageProviderExpectedCallNewQuery(subject string, usingContext *[]str
 func googleImageProviderExpectedCallsWhereUseAllAttempts(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
 	qgip := mock_google.NewMockResult(ctrl)
 
-	for attempt := range cfg.NumberOfAttemptRatingPicture {
+	for attempt := range cfg.CountSearches {
 		qgip.
 			EXPECT().
 			Get(gomock.Any(), attempt).

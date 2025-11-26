@@ -4,6 +4,8 @@ go 1.24.6
 
 require (
 	github.com/playwright-community/playwright-go v0.5200.0
+	github.com/prathyushnallamothu/ollamago v1.0.1-0.20250819150749-32de4bf4404e
+	github.com/privatesquare/bkst-go-utils v1.5.4
 	go.uber.org/mock v0.6.0
 	golang.org/x/sync v0.16.0
 )
@@ -33,8 +35,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prathyushnallamothu/ollamago v1.0.0 // indirect
-	github.com/privatesquare/bkst-go-utils v1.5.4 // indirect
 	github.com/ugorji/go/codec v1.1.7 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
@@ -59,3 +59,5 @@ require (
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/genai v1.22.0
 )
+
+replace github.com/prathyushnallamothu/ollamago => github.com/shredd0r/ollamago v0.0.0-20251126103611-fde5787d132d

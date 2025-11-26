@@ -10,18 +10,17 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const default_batch_size = 5
+const default_batch_size = uint(10)
 const template_name = "Maple Template X"
 
 type AnkiCardCreator struct {
-	queueSize       int
-	logger          *slog.Logger
-	ankiService     AnkiService
-	cardCreator     card.FlashcardCreator
-	targetExtractor extractor.Target
+	queueSize   uint
+	logger      *slog.Logger
+	ankiService AnkiService
+	cardCreator card.Creator
 }
 
-func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService AnkiService, cardCreator card.FlashcardCreator, targetExtractor extractor.Target) *AnkiCardCreator {
+func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService AnkiService, cardCreator card.Creator) *AnkiCardCreator {
 	queueSize := default_batch_size
 
 	if cfg.QueueSize != 0 {
@@ -29,23 +28,18 @@ func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService Anki
 	}
 
 	return &AnkiCardCreator{
-		queueSize:       queueSize,
-		logger:          logger.WithGroup("anki-card-creator"),
-		ankiService:     ankiService,
-		cardCreator:     cardCreator,
-		targetExtractor: targetExtractor,
+		queueSize:   queueSize,
+		logger:      logger.WithGroup("anki-card-creator"),
+		ankiService: ankiService,
+		cardCreator: cardCreator,
 	}
 }
 
 // TODO maybe need split errors to two category:
 // - critical - when this error returns, workflow will stop
 // - noncritical - when this error returns, workflow continue, add not stored target for some pull and return aka "not generated"
-func (c *AnkiCardCreator) Create(ctx context.Context, pathToTargets string) error {
+func (c *AnkiCardCreator) Create(ctx context.Context, targets *[]extractor.TargetInfo) error {
 	c.logger.Info("start creating flashcard and store it in anki")
-	targets, err := c.targetExtractor.GetFromDir(ctx, pathToTargets)
-	if err != nil {
-		return err
-	}
 
 	errg := errgroup.Group{}
 	chanQueue := make(chan bool, c.queueSize)
@@ -82,7 +76,7 @@ func (c *AnkiCardCreator) Create(ctx context.Context, pathToTargets string) erro
 		}
 	}
 
-	err = errg.Wait()
+	err := errg.Wait()
 	if err != nil {
 		c.logger.Error("failed create one of card, stop creatings cards")
 		return err
@@ -92,6 +86,7 @@ func (c *AnkiCardCreator) Create(ctx context.Context, pathToTargets string) erro
 	return nil
 }
 
-func (c *AnkiCardCreator) isCriticalError(ctx context.Context, err error) bool {
+func (c *AnkiCardCreator) isCriticalError(err error) bool {
+
 	return false
 }

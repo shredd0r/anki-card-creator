@@ -17,11 +17,11 @@ import (
 	"github.com/shredd0r/anki-card-creator/utils"
 )
 
-type FlashcardCreator interface {
+type Creator interface {
 	Create(ctx context.Context, deck string, subject string, usingContext *[]string) (*models.Flashcard, error)
 }
 
-type implFlashcardCreator struct {
+type implCreator struct {
 	pictureCfg          config.PictureConfig
 	logger              *slog.Logger
 	llmProvider         llm.Provider
@@ -32,8 +32,8 @@ type implFlashcardCreator struct {
 func NewFlashcardCreator(pictureCfg config.PictureConfig, logger *slog.Logger,
 	llmProvider llm.Provider,
 	googleImageProvider google.Image,
-	cardContentFactory fetcher.CardContentFactory) FlashcardCreator {
-	return &implFlashcardCreator{
+	cardContentFactory fetcher.CardContentFactory) Creator {
+	return &implCreator{
 		pictureCfg:          pictureCfg,
 		logger:              logger.WithGroup("flashcard-creator"),
 		googleImageProvider: googleImageProvider,
@@ -42,7 +42,7 @@ func NewFlashcardCreator(pictureCfg config.PictureConfig, logger *slog.Logger,
 	}
 }
 
-func (c *implFlashcardCreator) Create(ctx context.Context, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
+func (c *implCreator) Create(ctx context.Context, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
 	subjectType := utils.GetSubjectType(subject)
 	cardContentFetcher, err := c.cardContentFactory.Get(subjectType)
 	if err != nil {
@@ -58,7 +58,7 @@ type fetchTask struct {
 	ignoreTaskErr bool
 }
 
-func (c *implFlashcardCreator) create(ctx context.Context, cardContentFetcher fetcher.CardContent, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
+func (c *implCreator) create(ctx context.Context, cardContentFetcher fetcher.CardContent, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
 	c.logger.Debug("start create flashcard", slog.Any("subject", subject))
 
 	ctxForCreate, cancel := context.WithCancel(ctx)
@@ -85,7 +85,7 @@ func (c *implFlashcardCreator) create(ctx context.Context, cardContentFetcher fe
 				picture = respPicture
 				return err
 			},
-			ignoreTaskErr: c.pictureCfg.IgnorePictureError,
+			ignoreTaskErr: c.pictureCfg.IgnoreError,
 		},
 	}
 
@@ -132,7 +132,7 @@ func (c *implFlashcardCreator) create(ctx context.Context, cardContentFetcher fe
 
 // Method for rating pictures gotten from google image
 // If all attempts images don't match, creating card continue without picture
-func (c *implFlashcardCreator) getPicture(ctx context.Context, subject string, usingContext *[]string, subjectType models.SubjectType) (*models.File, error) {
+func (c *implCreator) getPicture(ctx context.Context, subject string, usingContext *[]string, subjectType models.SubjectType) (*models.File, error) {
 	if subjectType == models.SubjectTypePhrase {
 		c.logger.Debug("picture for phrase is not searching, skip", slog.Any("subject", subject))
 		return nil, nil
@@ -150,7 +150,7 @@ func (c *implFlashcardCreator) getPicture(ctx context.Context, subject string, u
 		return nil, err
 	}
 
-	for attempt := range c.pictureCfg.NumberOfAttemptRatingPicture {
+	for attempt := range c.pictureCfg.CountSearches {
 		c.logger.Debug(fmt.Sprintf("attempt: %d for getting picture for subject: %s", attempt, subject))
 
 		picture, err := queryPageProvider.Get(ctx, attempt)
@@ -159,7 +159,7 @@ func (c *implFlashcardCreator) getPicture(ctx context.Context, subject string, u
 			return nil, err
 		}
 
-		rating, err := c.llmProvider.RatingPicture(ctx, subject, picture)
+		rating, err := c.llmProvider.RatePicture(ctx, subject, picture)
 		if err != nil {
 			c.logger.Error("failed rating picture for subject", slog.Any("subject", subject), slog.Any("attempt", attempt))
 			return nil, err
