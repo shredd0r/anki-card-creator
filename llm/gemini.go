@@ -99,7 +99,7 @@ func (p *implGemini) GenerateCardContent(ctx context.Context, subject string, us
 
 // RatePicture - method for send request to gemini backend, which checking how suitable is this picture for describe the subject.
 // I am using rating picture approach, because free gemini api access allows send image. Generation is not allowed.
-func (p *implGemini) RatePicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
+func (p *implGemini) RatePicture(ctx context.Context, subject string, picture *models.File) (*uint8, error) {
 	p.logger.Debug("start method 'RatingPicture'")
 
 	// skip picture with mimetype svg, because this type not supported gemini server
@@ -140,6 +140,21 @@ func (p *implGemini) RatePicture(ctx context.Context, subject string, picture *m
 	return &response.Rating, nil
 }
 
+// HealthCheck - request to server with llm for generate greetings message
+func (p *implGemini) HealthCheck(ctx context.Context) error {
+	_, err := p.client.Models.GenerateContent(
+		ctx,
+		model_for_generate_text,
+		genai.Text("My name is Creator, whats yours?"),
+		nil,
+	)
+	if err != nil {
+		p.logger.Error("failed health check", slog.Any("err", err.Error()))
+		return p.wrapError(err)
+	}
+	return nil
+}
+
 func (p *implGemini) wrapError(err error) error {
 	if !errors.As(err, &genai.APIError{}) {
 		return err
@@ -177,7 +192,7 @@ type rateLimitGemini struct {
 	geminiProvider Provider
 }
 
-func NewRateLimitGemini(ctx context.Context, logger *slog.Logger, client *genai.Client) Provider {
+func NewRateLimitGemini(logger *slog.Logger, client *genai.Client) Provider {
 	provider := &rateLimitGemini{
 		logger:                    logger,
 		activeTaskChan:            make(chan struct{}, rpm),
@@ -214,8 +229,8 @@ func (p *rateLimitGemini) GenerateCardContent(ctx context.Context, subject strin
 
 // RatePicture - method for send request to gemini backend, which checking how suitable is this picture for describe the subject.
 // Calling this method start process for calculate requesting per minutes for all calls to gemini backend
-func (p *rateLimitGemini) RatePicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
-	var rating *uint
+func (p *rateLimitGemini) RatePicture(ctx context.Context, subject string, picture *models.File) (*uint8, error) {
+	var rating *uint8
 
 	generateExplainTask := callMethodTask{
 		nameOfMethod: "RatePicture",
@@ -232,6 +247,17 @@ func (p *rateLimitGemini) RatePicture(ctx context.Context, subject string, pictu
 	}
 
 	return rating, nil
+}
+
+func (p *rateLimitGemini) HealthCheck(ctx context.Context) error {
+	generateExplainTask := callMethodTask{
+		nameOfMethod: "HealthCheck",
+		method: func() error {
+			return p.geminiProvider.HealthCheck(ctx)
+		},
+	}
+
+	return p.callProviderMethod(ctx, generateExplainTask)
 }
 
 func (p *rateLimitGemini) callProviderMethod(ctx context.Context, providersMethodTask callMethodTask) error {

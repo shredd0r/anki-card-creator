@@ -86,7 +86,7 @@ func (p *ollama) GenerateCardContent(ctx context.Context, subject string, usingC
 	return &generateCardContent, nil
 }
 
-func (p *ollama) RatePicture(ctx context.Context, subject string, picture *models.File) (*uint, error) {
+func (p *ollama) RatePicture(ctx context.Context, subject string, picture *models.File) (*uint8, error) {
 	p.logger.Debug("start rate picture", slog.Any("subject", subject))
 	resp, err := p.client.Generate(ctx, ollamago.GenerateRequest{
 		Model:  p.model,
@@ -113,6 +113,18 @@ func (p *ollama) RatePicture(ctx context.Context, subject string, picture *model
 	p.logger.Debug("thinking during rate picture", slog.Any("analysis", ratingResponse.Analysis))
 
 	return &ratingResponse.Rating, nil
+}
+
+func (p *ollama) HealthCheck(ctx context.Context) error {
+	resp, err := p.client.Generate(ctx, ollamago.GenerateRequest{
+		Model:  p.model,
+		Prompt: "My name is Creator, whats yours?",
+	})
+
+	if p.handleOllamaError(resp, err) != nil {
+		return err
+	}
+	return nil
 }
 
 func (p *ollama) handleOllamaError(resp *ollamago.GenerateResponse, err error) error {

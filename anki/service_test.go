@@ -1,4 +1,4 @@
-package services
+package anki
 
 import (
 	"encoding/base64"
@@ -9,8 +9,8 @@ import (
 
 	"github.com/atselvan/ankiconnect"
 	"github.com/privatesquare/bkst-go-utils/utils/errors"
+	mock_ankiconnect "github.com/shredd0r/anki-card-creator/anki/mock/ankiconnect"
 	"github.com/shredd0r/anki-card-creator/models"
-	mock_ankiconnect "github.com/shredd0r/anki-card-creator/services/mock/ankiconnect"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
@@ -100,7 +100,7 @@ func TestPositiveCases(t *testing.T) {
 				Models: mMm,
 			}
 
-			ankiService := NewAnkiService(logger, client)
+			ankiService := NewService(logger, client)
 
 			err := ankiService.StoreNewCard(t.Context(), templateName, testcase.Flashcard)
 			assert.Nil(t, err)
@@ -169,7 +169,7 @@ func TestNegativeCases(t *testing.T) {
 				Models: mMm,
 			}
 
-			ankiService := NewAnkiService(logger, client)
+			ankiService := NewService(logger, client)
 
 			err := ankiService.StoreNewCard(t.Context(), templateName, testcase.Flashcard)
 			assert.NotNil(t, err)

@@ -39,13 +39,14 @@ type GeneratedCardContent struct {
 }
 
 type ratingPictureResponse struct {
-	Rating   uint
+	Rating   uint8
 	Analysis string
 }
 
 type Provider interface {
 	GenerateCardContent(ctx context.Context, subject string, usingContext *[]string) (*GeneratedCardContent, error)
-	RatePicture(ctx context.Context, subject string, picture *models.File) (*uint, error)
+	RatePicture(ctx context.Context, subject string, picture *models.File) (*uint8, error)
+	HealthCheck(ctx context.Context) error
 }
 
 func getPromptRequestBy(subject string, usingContext *[]string) string {

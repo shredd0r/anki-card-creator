@@ -1,4 +1,4 @@
-package browsers
+package browser
 
 import "github.com/playwright-community/playwright-go"
 

@@ -1,3 +1,6 @@
+build:
+	
+
 test:
 	go generate ./...
 	go test -v -race -count=5 ./...

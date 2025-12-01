@@ -153,7 +153,7 @@ func (c *implCreator) getPicture(ctx context.Context, subject string, usingConte
 	for attempt := range c.pictureCfg.CountSearches {
 		c.logger.Debug(fmt.Sprintf("attempt: %d for getting picture for subject: %s", attempt, subject))
 
-		picture, err := queryPageProvider.Get(ctx, attempt)
+		picture, err := queryPageProvider.Get(ctx, uint(attempt))
 		if err != nil {
 			c.logger.Error("failed get picture for subject", slog.Any("subject", subject), slog.Any("attempt", attempt))
 			return nil, err

@@ -1,0 +1,293 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+
+	"github.com/atselvan/ankiconnect"
+	"github.com/playwright-community/playwright-go"
+	"github.com/prathyushnallamothu/ollamago"
+	"github.com/shredd0r/anki-card-creator/anki"
+	"github.com/shredd0r/anki-card-creator/browser"
+	"github.com/shredd0r/anki-card-creator/card"
+	"github.com/shredd0r/anki-card-creator/card/fetcher"
+	"github.com/shredd0r/anki-card-creator/config"
+	"github.com/shredd0r/anki-card-creator/downloader"
+	"github.com/shredd0r/anki-card-creator/extractor"
+	"github.com/shredd0r/anki-card-creator/google"
+	"github.com/shredd0r/anki-card-creator/llm"
+	"github.com/shredd0r/anki-card-creator/service"
+	"github.com/urfave/cli/v3"
+	"google.golang.org/genai"
+)
+
+func main() {
+	logger := slog.Default()
+	var pathToSubjects string
+
+	cmd := &cli.Command{
+		Name:  "anki-card-creator",
+		Usage: "Utilities for generate anki flashcards",
+		Arguments: []cli.Argument{
+			&cli.StringArg{
+				Name:        "input-path",
+				UsageText:   "path to json file with subjects, could be one file or directory with files",
+				Destination: &pathToSubjects,
+			},
+		},
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:     "debugging",
+				Usage:    "debugging mode, turn on showing browser window created by playwright, debug logging",
+				Category: "PERFOMANCE OPTIONS",
+			},
+			&cli.Uint8Flag{
+				Name:     "queue.size",
+				Usage:    "size of flashcard creating at the same time",
+				Value:    10,
+				Category: "PERFOMANCE OPTIONS",
+			},
+			&cli.BoolFlag{
+				Name:     "gemini",
+				Usage:    "indicates that`s for generate volumes will be used Gemini",
+				Category: "GEMINI OPTIONS",
+				Value:    false,
+			},
+			&cli.StringFlag{
+				Name:     "gemini.token",
+				Usage:    "developing token created in your developer account in Google",
+				Category: "GEMINI OPTIONS",
+			},
+			&cli.BoolFlag{
+				Name:     "ollama",
+				Usage:    "indicates that`s for generate volumes will be used your local LLM runned in Ollama server",
+				Category: "OLLAMA OPTIONS",
+				Value:    false,
+			},
+			&cli.StringFlag{
+				Name:     "ollama.host",
+				Usage:    "host to your ollama server",
+				Value:    "127.0.0.1",
+				Category: "OLLAMA OPTIONS",
+			},
+			&cli.Uint16Flag{
+				Name:     "ollama.port",
+				Usage:    "port to your ollama server",
+				Value:    11434,
+				Category: "OLLAMA OPTIONS",
+			},
+			&cli.StringFlag{
+				Name:     "ollama.model",
+				Usage:    "model name started on your ollama server, which will be used for generate volumes",
+				Category: "OLLAMA OPTIONS",
+			},
+			&cli.BoolFlag{
+				Name:     "picture.ignore",
+				Usage:    "skip selection picture if during searing and rate gets error",
+				Category: "PICTURE OPTIONS",
+				Value:    false,
+			},
+			&cli.Uint8Flag{
+				Name:     "picture.min-rating",
+				Usage:    "minimal rating for accept picture for flashcard, can be between 1 - 10",
+				Category: "PICTURE OPTIONS",
+				Value:    7,
+			},
+			&cli.Uint8Flag{
+				Name:     "picture.count-searches",
+				Usage:    "count of searches and rate images for flashcard",
+				Category: "PICTURE OPTIONS",
+				Value:    3,
+			},
+			&cli.StringFlag{
+				Name:  "config-file",
+				Usage: "path to config file with parameters",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			inputPath := cmd.StringArg("input-path")
+			if err := checkInputPath(inputPath); err != nil {
+				return err
+			}
+
+			cfg, err := getConfigFromFlags(cmd)
+			if err != nil {
+				return err
+			}
+			playwrightOpt := setDebuggingMode(*cfg)
+			firefox, err := browser.LaunchFirefox(playwrightOpt)
+			if err != nil {
+				return fmt.Errorf("failed start Firefox: %s", err.Error())
+			}
+			defer firefox.Close()
+
+			ankiService, err := createAnkiService(ctx, logger, cmd)
+			if err != nil {
+				return err
+			}
+			llmProvider, err := createLLMProviderByFlags(ctx, logger, *cfg)
+			if err != nil {
+				return err
+			}
+
+			fileDownloader := downloader.NewFile(logger)
+			googleImageProvider := google.NewImageProvider(logger, firefox, fileDownloader)
+			cambridgeExtractor := extractor.NewCambridge(logger, firefox, fileDownloader)
+			cardContentFactory := fetcher.NewCardContentFactory(logger, cambridgeExtractor, llmProvider)
+			flashcardCreator := card.NewFlashcardCreator(cfg.Picture, logger, llmProvider, googleImageProvider, cardContentFactory)
+			targetExtractor := extractor.NewTargetExtractor(logger)
+			ankiCardCreator := service.NewAnkiCardCreator(*cfg, logger, ankiService, flashcardCreator)
+
+			isFile, err := isPathToFile(pathToSubjects)
+			if err != nil {
+				return err
+			}
+			var targets *[]extractor.TargetInfo
+			if isFile {
+				targets, err = targetExtractor.GetFromFile(ctx, pathToSubjects)
+			} else {
+				targets, err = targetExtractor.GetFromDir(ctx, pathToSubjects)
+			}
+			if err != nil {
+				return err
+			}
+
+			return ankiCardCreator.Create(ctx, targets)
+		},
+	}
+
+	if err := cmd.Run(context.Background(), os.Args); err != nil {
+		logger.Error(err.Error())
+	}
+}
+
+func checkInputPath(inputPath string) error {
+	if inputPath == "" {
+		return fmt.Errorf("required path to jsons for creating flashcard")
+	}
+	return nil
+}
+
+func setDebuggingMode(cfg config.Config) playwright.BrowserTypeLaunchOptions {
+	if cfg.Debugging {
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+	}
+
+	// If Debugging enable - show browser windows -> Headless need be false
+	// If Debugging disable - hide browser windows -> Headless need be true
+	return playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(!cfg.Debugging),
+	}
+}
+
+func createLLMProviderByFlags(ctx context.Context, logger *slog.Logger, cfg config.Config) (llm.Provider, error) {
+
+	var err error
+	var llmProvider llm.Provider
+
+	if cfg.Gemini != nil {
+		llmProvider, err = createGeminiProvider(ctx, logger, *cfg.Gemini)
+	}
+
+	if cfg.Ollama != nil {
+		llmProvider, err = createOllamaProvider(logger, *cfg.Ollama)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Config guarantees thats one of provider will be set
+	// If not, returned error
+	return llmProvider, llmProvider.HealthCheck(ctx)
+}
+
+func createGeminiProvider(ctx context.Context, logger *slog.Logger, cfg config.GeminiConfig) (llm.Provider, error) {
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey: cfg.Token,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return llm.NewRateLimitGemini(logger, client), nil
+}
+
+func createOllamaProvider(logger *slog.Logger, cfg config.OllamaConfig) (llm.Provider, error) {
+	if cfg.Model == "" {
+		return nil, fmt.Errorf("llm model doesn't choosen for ollama server")
+	}
+
+	client := ollamago.NewClient(ollamago.WithBaseURL(fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)))
+
+	return llm.NewOllama(logger, cfg.Model, client), nil
+}
+
+func createAnkiService(ctx context.Context, logger *slog.Logger, cmd *cli.Command) (anki.Service, error) {
+	client := ankiconnect.NewClient()
+
+	s := anki.NewService(logger, client)
+	return s, s.HealthCheck(ctx)
+}
+
+func getConfigFromFlags(cmd *cli.Command) (*config.Config, error) {
+	pathToConfig := cmd.String("config-file")
+	if pathToConfig != "" {
+		return config.Read(pathToConfig)
+	}
+
+	queueSize := cmd.Uint("queue.size")
+	geminiConfig := getGeminiConfig(cmd)
+	ollamaConfig := getOllamaConfig(cmd)
+
+	if geminiConfig == nil && ollamaConfig == nil {
+		return nil, fmt.Errorf("no one llm provider choosen for creating flashcard")
+	}
+	if geminiConfig != nil && ollamaConfig != nil {
+		return nil, fmt.Errorf("you have to use only one llm provider, right now choosen all of them")
+	}
+
+	return &config.Config{
+		Debugging: cmd.Bool("debugging"),
+		QueueSize: queueSize,
+		Gemini:    geminiConfig,
+		Ollama:    ollamaConfig,
+		Picture: config.PictureConfig{
+			IgnoreError:   cmd.Bool("picture.ignore"),
+			CountSearches: cmd.Uint8("picture.count-searches"),
+			MinimalRating: cmd.Uint8("picture.min-rating"),
+		},
+	}, nil
+}
+
+func getGeminiConfig(cmd *cli.Command) *config.GeminiConfig {
+	isSet := cmd.Bool("gemini")
+	if isSet {
+		return &config.GeminiConfig{
+			Token: cmd.String("gemini.token"),
+		}
+	}
+	return nil
+}
+
+func getOllamaConfig(cmd *cli.Command) *config.OllamaConfig {
+	isSet := cmd.Bool("ollama")
+	if isSet {
+		return &config.OllamaConfig{
+			Host:  cmd.String("ollama.host"),
+			Port:  cmd.Uint16("ollama.port"),
+			Model: cmd.String("ollama.model"),
+		}
+	}
+	return nil
+}
+
+func isPathToFile(path string) (bool, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+
+	return !fileInfo.IsDir(), nil
+}

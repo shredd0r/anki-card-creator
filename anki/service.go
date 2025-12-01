@@ -1,6 +1,6 @@
-package services
+package anki
 
-//go:generate mockgen -source anki.go -destination mock/anki_mock.go
+//go:generate mockgen -source service.go -destination mock/service_mock.go
 //go:generate mockgen -destination mock/ankiconnect/ankiconnect_mock.go github.com/atselvan/ankiconnect MediaManager,DecksManager,NotesManager,ModelsManager
 
 import (
@@ -27,20 +27,21 @@ var (
 
 const query_for_get_notes = `"subject:%s" "deck:%s"`
 
-type AnkiService interface {
+type Service interface {
 	AddTemplate(ctx context.Context) error
 	StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error
 	IsCardAlreadyExist(ctx context.Context, subject string, deckname string) (bool, error)
+	HealthCheck(ctx context.Context) error
 }
 
-type implAnkiService struct {
+type implService struct {
 	logger            *slog.Logger
 	client            *ankiconnect.Client
 	alreadyExistDecks map[string]bool
 }
 
-func NewAnkiService(logger *slog.Logger, client *ankiconnect.Client) AnkiService {
-	return &implAnkiService{
+func NewService(logger *slog.Logger, client *ankiconnect.Client) Service {
+	return &implService{
 		logger:            logger.WithGroup("anki-service"),
 		client:            client,
 		alreadyExistDecks: map[string]bool{},
@@ -48,11 +49,11 @@ func NewAnkiService(logger *slog.Logger, client *ankiconnect.Client) AnkiService
 }
 
 // TODO add creation template in anki collection
-func (s *implAnkiService) AddTemplate(ctx context.Context) error {
+func (s *implService) AddTemplate(ctx context.Context) error {
 	panic("not implement")
 }
 
-func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error {
+func (s *implService) StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error {
 	s.logger.Debug("start store new card")
 	err := s.isTemplateExist(templateName)
 	if err != nil {
@@ -135,7 +136,7 @@ func (s *implAnkiService) StoreNewCard(ctx context.Context, templateName string,
 	return nil
 }
 
-func (s *implAnkiService) IsCardAlreadyExist(ctx context.Context, subject string, deckname string) (bool, error) {
+func (s *implService) IsCardAlreadyExist(ctx context.Context, subject string, deckname string) (bool, error) {
 	select {
 	case <-ctx.Done():
 		{
@@ -166,7 +167,17 @@ func (s *implAnkiService) IsCardAlreadyExist(ctx context.Context, subject string
 
 }
 
-func (s *implAnkiService) storeMediafile(ctx context.Context, filename string, mediafile *models.File) error {
+func (s *implService) HealthCheck(ctx context.Context) error {
+	s.logger.Debug("start healthcheck")
+	restErr := s.client.Ping()
+	if restErr != nil {
+		s.logger.Error("connection with anki server not set")
+		return errors.New(restErr.Message)
+	}
+	return nil
+}
+
+func (s *implService) storeMediafile(ctx context.Context, filename string, mediafile *models.File) error {
 	s.logger.Debug("start store mediafile to anki")
 
 	select {
@@ -192,7 +203,7 @@ func (s *implAnkiService) storeMediafile(ctx context.Context, filename string, m
 	}
 }
 
-func (s *implAnkiService) makeMediafileName(subject string, mediafile *models.File) (string, error) {
+func (s *implService) makeMediafileName(subject string, mediafile *models.File) (string, error) {
 	typeOfFile, err := s.getType(mediafile.MIMEType)
 	if err != nil {
 		return "", err
@@ -200,13 +211,13 @@ func (s *implAnkiService) makeMediafileName(subject string, mediafile *models.Fi
 	return fmt.Sprintf("_%s.%s", strings.ToLower(strings.ReplaceAll(subject, " ", "-")), typeOfFile), nil
 }
 
-func (s *implAnkiService) encodeMediaContent(mediafile *models.File) (*string, error) {
+func (s *implService) encodeMediaContent(mediafile *models.File) (*string, error) {
 	s.logger.Debug("start encode media content")
 	encodedMediaContent := base64.StdEncoding.EncodeToString(mediafile.Content)
 	return &encodedMediaContent, nil
 }
 
-func (s *implAnkiService) isTemplateExist(templateName string) error {
+func (s *implService) isTemplateExist(templateName string) error {
 	s.logger.Debug("check if template exist")
 	_, restErr := s.client.Models.GetFields(templateName)
 	if restErr != nil {
@@ -221,7 +232,7 @@ func (s *implAnkiService) isTemplateExist(templateName string) error {
 	return nil
 }
 
-func (s *implAnkiService) createDeckIfItNotExist(deckname string) error {
+func (s *implService) createDeckIfItNotExist(deckname string) error {
 	// Check, if deckname is cached
 	if _, ok := s.alreadyExistDecks[deckname]; !ok {
 		s.logger.Debug(fmt.Sprintf("%s isn't cached, start checking deck in anki", deckname))
@@ -248,7 +259,7 @@ func (s *implAnkiService) createDeckIfItNotExist(deckname string) error {
 }
 
 // TODO move it to another object, because it isnt task AnkiService
-func (s *implAnkiService) getType(MIMEType string) (string, error) {
+func (s *implService) getType(MIMEType string) (string, error) {
 	s.logger.Debug("start getting type from MIMEType")
 
 	// I use regex, because if image is svg, content-type is 'image/svg+html'
@@ -273,7 +284,7 @@ func (s *implAnkiService) getType(MIMEType string) (string, error) {
 	return typeOfFile, nil
 }
 
-func (s *implAnkiService) storeMediafileAndReturnFilename(ctx context.Context, subject string, mediaFile *models.File) (string, error) {
+func (s *implService) storeMediafileAndReturnFilename(ctx context.Context, subject string, mediaFile *models.File) (string, error) {
 	filename, err := s.makeMediafileName(subject, mediaFile)
 	if err != nil {
 		return "", err
@@ -297,7 +308,7 @@ func (s *implAnkiService) storeMediafileAndReturnFilename(ctx context.Context, s
 //	<li>Cut the lime in half.</li>
 //
 // </ul>
-func (s *implAnkiService) formatExampleField(flashcard *models.Flashcard) string {
+func (s *implService) formatExampleField(flashcard *models.Flashcard) string {
 	formatExamples := "<ul>%s</ul>"
 
 	examples := ""
@@ -310,6 +321,6 @@ func (s *implAnkiService) formatExampleField(flashcard *models.Flashcard) string
 	return fmt.Sprintf(formatExamples, examples)
 }
 
-func (s *implAnkiService) formatPictureField(filename string) string {
+func (s *implService) formatPictureField(filename string) string {
 	return fmt.Sprintf("<img src='%s'>", filename)
 }

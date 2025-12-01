@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/shredd0r/anki-card-creator/browsers"
+	"github.com/shredd0r/anki-card-creator/browser"
 	mock_downloader "github.com/shredd0r/anki-card-creator/downloader/mock"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -45,7 +45,7 @@ func TestNegativeIndexOutOfRange(t *testing.T) {
 func initAllStructs(t *testing.T) (*mock_downloader.MockFile, Image) {
 	logger := slog.Default()
 	controller := gomock.NewController(t)
-	browser, err := browsers.LaunchFirefox()
+	browser, err := browser.LaunchFirefox()
 	assert.Nil(t, err, "browser was created with error")
 	mockDownloader := mock_downloader.NewMockFile(controller)
 	googleImageProvider := NewImageProvider(logger, browser, mockDownloader)

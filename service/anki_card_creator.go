@@ -1,9 +1,10 @@
-package services
+package service
 
 import (
 	"context"
 	"log/slog"
 
+	"github.com/shredd0r/anki-card-creator/anki"
 	"github.com/shredd0r/anki-card-creator/card"
 	"github.com/shredd0r/anki-card-creator/config"
 	"github.com/shredd0r/anki-card-creator/extractor"
@@ -16,11 +17,11 @@ const template_name = "Maple Template X"
 type AnkiCardCreator struct {
 	queueSize   uint
 	logger      *slog.Logger
-	ankiService AnkiService
+	ankiService anki.Service
 	cardCreator card.Creator
 }
 
-func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService AnkiService, cardCreator card.Creator) *AnkiCardCreator {
+func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService anki.Service, cardCreator card.Creator) *AnkiCardCreator {
 	queueSize := default_batch_size
 
 	if cfg.QueueSize != 0 {
