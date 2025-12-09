@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
+	"time"
 
-	"github.com/atselvan/ankiconnect"
 	"github.com/playwright-community/playwright-go"
 	"github.com/prathyushnallamothu/ollamago"
 	"github.com/shredd0r/anki-card-creator/anki"
@@ -38,6 +39,11 @@ func main() {
 			},
 		},
 		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "output",
+				Usage: "path to directory, where could be save generated anki package file",
+				Value: "./",
+			},
 			&cli.BoolFlag{
 				Name:     "debugging",
 				Usage:    "debugging mode, turn on showing browser window created by playwright, debug logging",
@@ -83,6 +89,12 @@ func main() {
 				Usage:    "model name started on your ollama server, which will be used for generate volumes",
 				Category: "OLLAMA OPTIONS",
 			},
+			&cli.DurationFlag{
+				Name:     "ollama.timeout",
+				Usage:    "timeout seconds for wating response from server",
+				Value:    time.Minute * 5,
+				Category: "OLLAMA OPTIONS",
+			},
 			&cli.BoolFlag{
 				Name:     "picture.ignore",
 				Usage:    "skip selection picture if during searing and rate gets error",
@@ -123,15 +135,12 @@ func main() {
 			}
 			defer firefox.Close()
 
-			ankiService, err := createAnkiService(ctx, logger, cmd)
-			if err != nil {
-				return err
-			}
 			llmProvider, err := createLLMProviderByFlags(ctx, logger, *cfg)
 			if err != nil {
 				return err
 			}
 
+			ankiService := anki.NewService(logger)
 			fileDownloader := downloader.NewFile(logger)
 			googleImageProvider := google.NewImageProvider(logger, firefox, fileDownloader)
 			cambridgeExtractor := extractor.NewCambridge(logger, firefox, fileDownloader)
@@ -219,16 +228,9 @@ func createOllamaProvider(logger *slog.Logger, cfg config.OllamaConfig) (llm.Pro
 		return nil, fmt.Errorf("llm model doesn't choosen for ollama server")
 	}
 
-	client := ollamago.NewClient(ollamago.WithBaseURL(fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)))
+	client := ollamago.NewClient(ollamago.WithBaseURL(fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)), ollamago.WithHTTPClient(&http.Client{Timeout: cfg.Timeout}))
 
 	return llm.NewOllama(logger, cfg.Model, client), nil
-}
-
-func createAnkiService(ctx context.Context, logger *slog.Logger, cmd *cli.Command) (anki.Service, error) {
-	client := ankiconnect.NewClient()
-
-	s := anki.NewService(logger, client)
-	return s, s.HealthCheck(ctx)
 }
 
 func getConfigFromFlags(cmd *cli.Command) (*config.Config, error) {
@@ -240,6 +242,10 @@ func getConfigFromFlags(cmd *cli.Command) (*config.Config, error) {
 	queueSize := cmd.Uint("queue.size")
 	geminiConfig := getGeminiConfig(cmd)
 	ollamaConfig := getOllamaConfig(cmd)
+	output, err := getOutputPath(cmd)
+	if err != nil {
+		return nil, err
+	}
 
 	if geminiConfig == nil && ollamaConfig == nil {
 		return nil, fmt.Errorf("no one llm provider choosen for creating flashcard")
@@ -251,6 +257,7 @@ func getConfigFromFlags(cmd *cli.Command) (*config.Config, error) {
 	return &config.Config{
 		Debugging: cmd.Bool("debugging"),
 		QueueSize: queueSize,
+		Output:    output,
 		Gemini:    geminiConfig,
 		Ollama:    ollamaConfig,
 		Picture: config.PictureConfig{
@@ -259,6 +266,16 @@ func getConfigFromFlags(cmd *cli.Command) (*config.Config, error) {
 			MinimalRating: cmd.Uint8("picture.min-rating"),
 		},
 	}, nil
+}
+
+func getOutputPath(cmd *cli.Command) (string, error) {
+	outputPath := cmd.String("output")
+
+	if _, err := os.ReadDir(outputPath); err != nil {
+		return "", err
+	}
+
+	return outputPath, nil
 }
 
 func getGeminiConfig(cmd *cli.Command) *config.GeminiConfig {
@@ -275,9 +292,10 @@ func getOllamaConfig(cmd *cli.Command) *config.OllamaConfig {
 	isSet := cmd.Bool("ollama")
 	if isSet {
 		return &config.OllamaConfig{
-			Host:  cmd.String("ollama.host"),
-			Port:  cmd.Uint16("ollama.port"),
-			Model: cmd.String("ollama.model"),
+			Host:    cmd.String("ollama.host"),
+			Port:    cmd.Uint16("ollama.port"),
+			Model:   cmd.String("ollama.model"),
+			Timeout: cmd.Duration("ollama.timeout"),
 		}
 	}
 	return nil

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"syscall"
 
 	"github.com/prathyushnallamothu/ollamago"
 	"github.com/shredd0r/anki-card-creator/models"
@@ -129,7 +130,14 @@ func (p *ollama) HealthCheck(ctx context.Context) error {
 
 func (p *ollama) handleOllamaError(resp *ollamago.GenerateResponse, err error) error {
 	if err != nil {
-		p.logger.Error("received error from server", slog.Any("err", err.Error()))
+		p.logger.Error("received error from ollama server")
+
+		if errors.Is(err, syscall.ECONNREFUSED) {
+			return err
+		}
+		if resp == nil {
+			return err
+		}
 
 		var respErr ollamago.ResponseError
 		err := json.Unmarshal([]byte(resp.Response), &respErr)

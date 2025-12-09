@@ -1,11 +1,13 @@
 debuggin: false
 queue-size: 15
+output: ./output
 gemini:
-  token: 123-token
+  token: Jdjgo803JChpqqzjadpqet0892jvqywnzJPpqyn
 ollama:
-  host: some-host
+  host: 127.0.0.1
   port: 8080
   model: gemma
+  timeout: 1m
 picture:
   min-rating: 5
   count-searches: 2

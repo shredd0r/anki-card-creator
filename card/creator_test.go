@@ -16,10 +16,10 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-type funcForCreateCardContentComponentFether func(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetcher.MockCardContent
+type funcForCreateCardContentComponentFether func(expectedFlashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetcher.MockCardContent
 type llmProviderExpectedCalls func(subject string, usingContext *[]string, cfg config.PictureConfig, gp *mock_llm.MockProvider)
-type googleImageProviderExpectedCalls func(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage)
-type cardContentFetcherFactoryExpectedCalls func(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory)
+type googleImageProviderExpectedCalls func(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage)
+type cardContentFetcherFactoryExpectedCalls func(expectedFlashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory)
 
 type positiveCase struct {
 	Name                                   string
@@ -43,8 +43,16 @@ func TestPositiveCases(t *testing.T) {
 				Examples:      []string{"word-example"},
 				Paraphrase:    "word-explain",
 				Transcription: &transcription,
-				Pronunciation: &models.File{},
-				Picture:       &models.File{},
+				Pronunciation: &models.File{
+					Filename: "word.mp3",
+					MIMEType: "audio/mpeg",
+				},
+				Picture: &models.File{
+					Filename: "word.jpeg",
+					MIMEType: "image/jpeg",
+				},
+				Synonyms: []string{"synonym"},
+				Tags:     []string{"context-word"},
 			},
 			llmProviderExpectedCalls:               llmProviderExpectedCallsForRatingPicture,
 			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsForGetOnePicture,
@@ -59,6 +67,8 @@ func TestPositiveCases(t *testing.T) {
 				DeckName:    "test-deck",
 				Examples:    []string{"phrase-example"},
 				Paraphrase:  "phrase-explain",
+				Synonyms:    []string{"synonym"},
+				Tags:        []string{"context-phrase"},
 			},
 			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
 			googleImageProviderExpectedCalls:       googleImageProviderWithoutExpectdCalls,
@@ -73,6 +83,8 @@ func TestPositiveCases(t *testing.T) {
 				DeckName:    "test-deck",
 				Examples:    []string{"phrase-example"},
 				Paraphrase:  "phrase-explain",
+				Synonyms:    []string{"synonym"},
+				Tags:        []string{},
 			},
 			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
 			googleImageProviderExpectedCalls:       googleImageProviderWithoutExpectdCalls,
@@ -88,8 +100,13 @@ func TestPositiveCases(t *testing.T) {
 				Examples:      []string{"word-example"},
 				Paraphrase:    "word-explain",
 				Transcription: &transcription,
-				Pronunciation: &models.File{},
-				Picture:       nil,
+				Pronunciation: &models.File{
+					Filename: "word.mp3",
+					MIMEType: "audio/mpeg",
+				},
+				Picture:  nil,
+				Synonyms: []string{"synonym"},
+				Tags:     []string{"context-without-image"},
 			},
 			llmProviderExpectedCalls:               llmProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed,
 			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsWhereUseAllAttempts,
@@ -111,7 +128,7 @@ func TestPositiveCases(t *testing.T) {
 			cccf := mock_fetcher.NewMockCardContentFactory(ctrl)
 
 			testcase.llmProviderExpectedCalls(testcase.ExpectedFlashcard.Subject, testcase.UsingContextForFlashcard, cfg, gp)
-			testcase.googleImageProviderExpectedCalls(testcase.ExpectedFlashcard.Subject, testcase.UsingContextForFlashcard, cfg, ctrl, gip)
+			testcase.googleImageProviderExpectedCalls(testcase.ExpectedFlashcard, testcase.UsingContextForFlashcard, cfg, ctrl, gip)
 			testcase.cardContentFetcherFactoryExpectedCalls(testcase.ExpectedFlashcard, testcase.UsingContextForFlashcard, ctrl, cccf)
 
 			c := NewFlashcardCreator(cfg, logger, gp, gip, cccf)
@@ -183,15 +200,13 @@ func TestNegativeCases(t *testing.T) {
 			gp := mock_llm.NewMockProvider(ctrl)
 			gip := mock_google.NewMockImage(ctrl)
 			cccf := mock_fetcher.NewMockCardContentFactory(ctrl)
-
-			testcase.llmProviderExpectedCalls(testcase.Subject, usingContexForTest, cfg, gp)
-			testcase.googleImageProviderExpectedCalls(testcase.Subject, usingContexForTest, cfg, ctrl, gip)
-			testcase.cardContentFetcherFactoryExpectedCalls(&models.Flashcard{
+			flashcard := &models.Flashcard{
 				Subject:     testcase.Subject,
 				SubjectType: utils.GetSubjectType(testcase.Subject),
-			},
-				usingContexForTest,
-				ctrl, cccf)
+			}
+			testcase.llmProviderExpectedCalls(testcase.Subject, usingContexForTest, cfg, gp)
+			testcase.googleImageProviderExpectedCalls(flashcard, usingContexForTest, cfg, ctrl, gip)
+			testcase.cardContentFetcherFactoryExpectedCalls(flashcard, usingContexForTest, ctrl, cccf)
 
 			c := NewFlashcardCreator(cfg, logger, gp, gip, cccf)
 
@@ -229,18 +244,18 @@ func llmProviderExpectedCallsWhereReturnErr(subject string, usingContext *[]stri
 		Return(nil, errors.New("request limit reached"))
 }
 
-func googleImageProviderExpectedCallsForGetOnePicture(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
+func googleImageProviderExpectedCallsForGetOnePicture(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
 	qgip := mock_google.NewMockResult(ctrl)
 
 	qgip.
 		EXPECT().
-		Get(gomock.Any(), uint(0)).
-		Return(&models.File{}, nil)
+		Get(gomock.Any(), expectedFlashcard.Subject, uint(0)).
+		Return(expectedFlashcard.Picture, nil)
 
-	googleImageProviderExpectedCallNewQuery(subject, usingContext, gip, qgip)
+	googleImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
 }
 
-func googleImageProviderWithoutExpectdCalls(subject string, usingContex *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
+func googleImageProviderWithoutExpectdCalls(expectedFlashcard *models.Flashcard, usingContex *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
 }
 
 func googleImageProviderExpectedCallNewQuery(subject string, usingContext *[]string, gip *mock_google.MockImage, qgip *mock_google.MockResult) {
@@ -255,30 +270,30 @@ func googleImageProviderExpectedCallNewQuery(subject string, usingContext *[]str
 		Return(qgip, nil)
 }
 
-func googleImageProviderExpectedCallsWhereUseAllAttempts(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
+func googleImageProviderExpectedCallsWhereUseAllAttempts(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
 	qgip := mock_google.NewMockResult(ctrl)
 
-	for attempt := range cfg.CountSearches {
+	for attempt := range uint(cfg.CountSearches) {
 		qgip.
 			EXPECT().
-			Get(gomock.Any(), attempt).
+			Get(gomock.Any(), expectedFlashcard.Subject, attempt).
 			Times(1).
-			Return(&models.File{}, nil)
+			Return(expectedFlashcard.Picture, nil)
 	}
 
-	googleImageProviderExpectedCallNewQuery(subject, usingContext, gip, qgip)
+	googleImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
 }
 
-func googleImageProviderExpectedCallsWhereReturnErr(subject string, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
+func googleImageProviderExpectedCallsWhereReturnErr(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
 	qgip := mock_google.NewMockResult(ctrl)
 
 	qgip.
 		EXPECT().
-		Get(gomock.Any(), uint(0)).
+		Get(gomock.Any(), expectedFlashcard.Subject, uint(0)).
 		Times(1).
 		Return(nil, errors.New("index out of range"))
 
-	googleImageProviderExpectedCallNewQuery(subject, usingContext, gip, qgip)
+	googleImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
 
 }
 

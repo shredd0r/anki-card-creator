@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -9,6 +10,7 @@ import (
 type Config struct {
 	Debugging bool          `yaml:"debugging"`
 	QueueSize uint          `yaml:"queue-size"`
+	Output    string        `yaml:"output"`
 	Gemini    *GeminiConfig `yaml:"gemini"`
 	Ollama    *OllamaConfig `yaml:"ollama"`
 	Picture   PictureConfig `yaml:"picture"`
@@ -19,9 +21,10 @@ type GeminiConfig struct {
 }
 
 type OllamaConfig struct {
-	Host  string `yaml:"host"`
-	Port  uint16 `yaml:"port"`
-	Model string `yaml:"model"`
+	Host    string        `yaml:"host"`
+	Port    uint16        `yaml:"port"`
+	Model   string        `yaml:"model"`
+	Timeout time.Duration `yaml:"timeout"`
 }
 
 type PictureConfig struct {

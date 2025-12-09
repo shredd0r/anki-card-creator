@@ -17,6 +17,7 @@ const (
 )
 
 type File struct {
+	Filename string
 	Content  []byte
 	MIMEType string
 }
@@ -31,6 +32,7 @@ type Flashcard struct {
 	Synonyms      []string
 	Picture       *File
 	Examples      []string
+	Tags          []string
 }
 
 type CardContent struct {

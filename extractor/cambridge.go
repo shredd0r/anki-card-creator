@@ -126,7 +126,7 @@ func (e *implCambridge) GetCard(ctx context.Context, subject string) (*Cambridge
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		pronunciation, errPronunciation = e.getPronunciation(ctx, mainPageLocator)
+		pronunciation, errPronunciation = e.getPronunciation(ctx, subject, mainPageLocator)
 	}()
 
 	transcription, err := e.getTransacription(ctx, mainPageLocator)
@@ -177,7 +177,7 @@ func (e *implCambridge) gotoSubjectPage(ctx context.Context, subject string) (pl
 				return nil, err
 			}
 
-			subjectUrl, err := url.JoinPath(home_url_page, subject)
+			subjectUrl, err := url.JoinPath(home_url_page, strings.ToLower(subject))
 			if err != nil {
 				e.logger.Error("failed join subjec to dictionary url", slog.Any("err", err.Error()))
 				return nil, err
@@ -226,7 +226,7 @@ func (e *implCambridge) getTransacription(ctx context.Context, mainPageLocator p
 		{
 			transcription, err := e.getInnerTextFromChild(mainPageLocator, selector_for_transcription_cambridge)
 			if err != nil {
-				e.logger.Error("failed get transcriptinf from parent locator", slog.Any("err", err.Error()))
+				e.logger.Error("failed get transcription from parent locator", slog.Any("err", err.Error()))
 				return nil, err
 			}
 
@@ -295,7 +295,7 @@ func (e *implCambridge) getAllStringsBySelector(ctx context.Context, mainPageLoc
 
 }
 
-func (e *implCambridge) getPronunciation(ctx context.Context, mainPageLocator playwright.Locator) (*models.File, error) {
+func (e *implCambridge) getPronunciation(ctx context.Context, subject string, mainPageLocator playwright.Locator) (*models.File, error) {
 	pronunciationFileLocator := mainPageLocator.Locator(selector_for_pronunciation_cambridge)
 	pronunciationFilePath, err := pronunciationFileLocator.GetAttribute("src")
 	if err != nil {
@@ -318,7 +318,7 @@ func (e *implCambridge) getPronunciation(ctx context.Context, mainPageLocator pl
 		}
 	}
 
-	return e.fileDownloader.Download(ctx, pronunciationFileUrl)
+	return e.fileDownloader.Download(ctx, subject, pronunciationFileUrl)
 }
 
 func (e *implCambridge) getInnerTextFromChild(parentLocator playwright.Locator, selector string) (*string, error) {

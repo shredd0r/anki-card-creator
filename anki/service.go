@@ -1,303 +1,166 @@
 package anki
 
 //go:generate mockgen -source service.go -destination mock/service_mock.go
-//go:generate mockgen -destination mock/ankiconnect/ankiconnect_mock.go github.com/atselvan/ankiconnect MediaManager,DecksManager,NotesManager,ModelsManager
 
 import (
 	"context"
-	"encoding/base64"
-	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
-	"slices"
 	"strings"
-	"sync"
 
-	"github.com/atselvan/ankiconnect"
+	"github.com/npcnixel/genanki-go"
 	"github.com/shredd0r/anki-card-creator/models"
-	"golang.org/x/sync/errgroup"
 )
 
-var (
-	errMoreThanOneType      = errors.New("matched more than 1 content types")
-	errCardAlreadyExist     = errors.New("card already exist")
-	errTemplateNameNotExist = errors.New("template name for card not exist")
+const (
+	model_id      = 10011001
+	model_name    = "card-generator-v.1.0.0"
+	template_name = "card-generator-template"
+	default_tag   = "anki-card-creator"
 )
-
-const query_for_get_notes = `"subject:%s" "deck:%s"`
 
 type Service interface {
-	AddTemplate(ctx context.Context) error
-	StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error
-	IsCardAlreadyExist(ctx context.Context, subject string, deckname string) (bool, error)
-	HealthCheck(ctx context.Context) error
+	AddFlashcard(ctx context.Context, flashcard *models.Flashcard)
+	SavePackage(ctx context.Context, pathToFile string) error
 }
 
 type implService struct {
-	logger            *slog.Logger
-	client            *ankiconnect.Client
-	alreadyExistDecks map[string]bool
+	logger *slog.Logger
+	decks  map[string]*genanki.Deck
 }
 
-func NewService(logger *slog.Logger, client *ankiconnect.Client) Service {
+func NewService(logger *slog.Logger) Service {
 	return &implService{
-		logger:            logger.WithGroup("anki-service"),
-		client:            client,
-		alreadyExistDecks: map[string]bool{},
+		logger: logger.WithGroup("anki-service"),
+		decks:  map[string]*genanki.Deck{},
 	}
 }
 
-// TODO add creation template in anki collection
-func (s *implService) AddTemplate(ctx context.Context) error {
-	panic("not implement")
-}
+// AddFlashcard - method for putting down flashcard in appropriate deck by deckname in flashcard
+func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashcard) {
+	s.logger.Debug("start adding flashcard to deck", slog.Any("deck", flashcard.DeckName), slog.Any("subject", flashcard.Subject))
 
-func (s *implService) StoreNewCard(ctx context.Context, templateName string, flashcard *models.Flashcard) error {
-	s.logger.Debug("start store new card")
-	err := s.isTemplateExist(templateName)
-	if err != nil {
-		return err
+	deck, ok := s.decks[flashcard.DeckName]
+	if !ok {
+		deck = genanki.NewDeck(s.getIdForDeck(), flashcard.DeckName, "")
+		s.decks[flashcard.DeckName] = deck
 	}
 
-	isExist, err := s.IsCardAlreadyExist(ctx, flashcard.Subject, flashcard.DeckName)
-	if err != nil {
-		return err
-	}
-	if isExist {
-		return errCardAlreadyExist
-	}
-
-	err = s.createDeckIfItNotExist(flashcard.DeckName)
-	if err != nil {
-		return nil
-	}
-
-	ankiCardFields := map[string]string{
-		"Subject":      flashcard.Subject,
-		"Paraphrase":   flashcard.Paraphrase,
-		"Example":      s.formatExampleField(flashcard),
-		"Has_Spelling": "1",
-	}
-
-	if flashcard.Transcription != nil {
-		ankiCardFields["Transcription"] = *flashcard.Transcription
-	}
-
-	g := errgroup.Group{}
-	fieldsMutex := sync.Mutex{}
-
-	//  Store picture file in anki with goroutine if card has picture
+	pictureFilename := ""
 	if flashcard.Picture != nil {
-		g.Go(func() error {
-			filename, err := s.storeMediafileAndReturnFilename(ctx, flashcard.Subject, flashcard.Picture)
-			if err != nil {
-				return err
-			}
-			fieldsMutex.Lock()
-			ankiCardFields["Picture"] = s.formatPictureField(filename)
-			fieldsMutex.Unlock()
-			return nil
-		})
-
+		pictureFilename = s.formatPictureField(flashcard.Picture.Filename)
+		deck.AddMedia(flashcard.Picture.Filename, flashcard.Picture.Content)
 	}
 
-	//  Store picture file in anki with goroutine if card has pronunciation
+	pronunciationTag := ""
 	if flashcard.Pronunciation != nil {
-		g.Go(func() error {
-			filename, err := s.storeMediafileAndReturnFilename(ctx, flashcard.Subject, flashcard.Pronunciation)
-			if err != nil {
-				return err
-			}
-			fieldsMutex.Lock()
-			ankiCardFields["Pronunciation"] = filename
-			fieldsMutex.Unlock()
-			return nil
-		})
+		pronunciationTag = flashcard.Pronunciation.Filename
+		deck.AddMedia(flashcard.Pronunciation.Filename, flashcard.Pronunciation.Content)
 	}
 
-	err = g.Wait()
-	if err != nil {
-		s.logger.Error("failed store file in anki", slog.Any("err", err.Error()))
-		return err
+	transcription := ""
+	if flashcard.Transcription != nil {
+		transcription = *flashcard.Transcription
 	}
 
-	restErr := s.client.Notes.Add(ankiconnect.Note{
-		DeckName:  flashcard.DeckName,
-		ModelName: templateName,
-		Fields:    ankiCardFields,
+	noteId := s.getIdForNote(deck)
+	deck.AddNote(&genanki.Note{
+		ID:      noteId,
+		ModelID: model_id,
+		Fields: []string{
+			flashcard.Subject,
+			pronunciationTag,
+			transcription,
+			flashcard.Paraphrase,
+			s.formatSynonymsField(flashcard),
+			pictureFilename,
+			s.formatExampleField(flashcard),
+		},
+		Tags: append(flashcard.Tags, default_tag),
 	})
 
-	if restErr != nil {
-		s.logger.Error("failed add new card to anki", slog.Any("err", restErr.Message))
-		return errors.New(restErr.Message)
-	}
-
-	return nil
+	s.logger.Debug("added new note to deck", slog.Any("deck", deck.Name), slog.Any("note id", noteId))
 }
 
-func (s *implService) IsCardAlreadyExist(ctx context.Context, subject string, deckname string) (bool, error) {
-	select {
-	case <-ctx.Done():
+// SavePackage - create the package with all decks from service and save it to file
+func (s *implService) SavePackage(ctx context.Context, pathToFile string) error {
+	sliceDecks := []*genanki.Deck{}
+	for _, deck := range s.decks {
+		sliceDecks = append(sliceDecks, deck)
+	}
+
+	pkg := genanki.NewPackage(sliceDecks).AddModel(&genanki.Model{
+		ID:        model_id,
+		Name:      model_name,
+		Fields:    s.getFieldsForModel(),
+		Templates: s.getTemplatesForModel(),
+		CSS:       css,
+	})
+
+	return pkg.WriteToFile(pathToFile)
+
+}
+
+func (s *implService) getIdForDeck() int64 {
+	return int64(len(s.decks) + 1)
+}
+
+func (s *implService) getIdForNote(deck *genanki.Deck) int64 {
+	return int64(len(deck.Notes) + 1)
+}
+
+func (s *implService) getFieldsForModel() []genanki.Field {
+	return []genanki.Field{
 		{
-			s.logger.Debug("context is done, returning from IsCardAlreadyExist")
-			return false, ctx.Err()
-		}
-	default:
+			Name: "Subject",
+			Ord:  0,
+			Font: "Helvetica",
+			Size: 30,
+		},
 		{
-			s.logger.Debug("check if card already exist")
-			query := fmt.Sprintf(query_for_get_notes, subject, deckname)
-			resp, restErr := s.client.Notes.Get(query)
-
-			if restErr != nil {
-				s.logger.Error("failed get note from anki", slog.Any("err", restErr.Message))
-				s.logger.Error("query for get note ", slog.Any("query", query))
-				return false, errors.New(restErr.Message)
-			}
-
-			for _, r := range *resp {
-				if strings.Compare(r.Fields["Subject"].Value, subject) == 0 {
-					s.logger.Debug("card already exist", slog.Any("subject", subject))
-					return true, nil
-				}
-			}
-			return false, nil
-		}
-	}
-
-}
-
-func (s *implService) HealthCheck(ctx context.Context) error {
-	s.logger.Debug("start healthcheck")
-	restErr := s.client.Ping()
-	if restErr != nil {
-		s.logger.Error("connection with anki server not set")
-		return errors.New(restErr.Message)
-	}
-	return nil
-}
-
-func (s *implService) storeMediafile(ctx context.Context, filename string, mediafile *models.File) error {
-	s.logger.Debug("start store mediafile to anki")
-
-	select {
-	case <-ctx.Done():
+			Name: "Pronunciation",
+			Ord:  1,
+		},
 		{
-			s.logger.Info("context is done, returning from 'storeMediafile'")
-			return ctx.Err()
-		}
-	default:
+			Name: "Transcription",
+			Ord:  2,
+			Font: "Helvetica",
+			Size: 20,
+		},
 		{
-			encodedMediaContent, err := s.encodeMediaContent(mediafile)
-			if err != nil {
-				return err
-			}
-			_, restErr := s.client.Media.StoreMediaFile(filename, *encodedMediaContent)
-			if restErr != nil {
-				s.logger.Error("failed store mediafile to anki", slog.Any("err", restErr.Error))
-				return errors.New(restErr.Message)
-			}
-
-			return nil
-		}
+			Name: "Paraphrase",
+			Ord:  3,
+			Font: "Helvetica",
+			Size: 20,
+		},
+		{
+			Name: "Synonyms",
+			Ord:  4,
+			Font: "Helvetica",
+			Size: 20,
+		},
+		{
+			Name: "Picture",
+			Ord:  5,
+		},
+		{
+			Name: "Example",
+			Ord:  6,
+			Font: "Helvetica",
+			Size: 18,
+		},
 	}
 }
 
-func (s *implService) makeMediafileName(subject string, mediafile *models.File) (string, error) {
-	typeOfFile, err := s.getType(mediafile.MIMEType)
-	if err != nil {
-		return "", err
+func (s *implService) getTemplatesForModel() []genanki.Template {
+	return []genanki.Template{
+		{
+			Name: template_name,
+			Ord:  0,
+			Qfmt: front_side_template,
+			Afmt: back_side_template,
+		},
 	}
-	return fmt.Sprintf("_%s.%s", strings.ToLower(strings.ReplaceAll(subject, " ", "-")), typeOfFile), nil
-}
-
-func (s *implService) encodeMediaContent(mediafile *models.File) (*string, error) {
-	s.logger.Debug("start encode media content")
-	encodedMediaContent := base64.StdEncoding.EncodeToString(mediafile.Content)
-	return &encodedMediaContent, nil
-}
-
-func (s *implService) isTemplateExist(templateName string) error {
-	s.logger.Debug("check if template exist")
-	_, restErr := s.client.Models.GetFields(templateName)
-	if restErr != nil {
-		// If models not found, server return error with message:
-		// "model was not found: 'name-of-model'"
-		if strings.Contains(restErr.Message, templateName) {
-			s.logger.Debug("template note exist", slog.Any("templateName", templateName))
-			return errTemplateNameNotExist
-		}
-		return errors.New(restErr.Message)
-	}
-	return nil
-}
-
-func (s *implService) createDeckIfItNotExist(deckname string) error {
-	// Check, if deckname is cached
-	if _, ok := s.alreadyExistDecks[deckname]; !ok {
-		s.logger.Debug(fmt.Sprintf("%s isn't cached, start checking deck in anki", deckname))
-		// If not, check deck exist in anki
-		existDecks, restErr := s.client.Decks.GetAll()
-		if restErr != nil {
-			s.logger.Error("failed get exist decks from anki", slog.Any("err", restErr.Error))
-			return errors.New(restErr.Error)
-		}
-
-		if slices.Contains(*existDecks, deckname) {
-			s.logger.Debug(fmt.Sprintf("deck '%s' found in anki decks, add it in cache", deckname))
-			s.alreadyExistDecks[deckname] = true
-		} else {
-			s.logger.Debug(fmt.Sprintf("deck '%s' not found in anki decs, create it", deckname))
-			restErr := s.client.Decks.Create(deckname)
-			if restErr != nil {
-				s.logger.Error("failed create new deck in anki", slog.Any("err", restErr.Error))
-				return errors.New(restErr.Error)
-			}
-		}
-	}
-	return nil
-}
-
-// TODO move it to another object, because it isnt task AnkiService
-func (s *implService) getType(MIMEType string) (string, error) {
-	s.logger.Debug("start getting type from MIMEType")
-
-	// I use regex, because if image is svg, content-type is 'image/svg+html'
-	// I need just type of file, in this case - 'svg'
-	regex, err := regexp.Compile(`\/([a-z\/]*)`)
-	if err != nil {
-		s.logger.Error("failed create regex by expression", slog.Any("err", err.Error()))
-		return "", err
-	}
-
-	typeOfFiles := regex.FindStringSubmatch(MIMEType)
-	if len(typeOfFiles) != 2 {
-		s.logger.Error("regex matched more than 1 types")
-		return "", errMoreThanOneType
-	}
-
-	// The first element is full match with symbol '/': /svg
-	// The second element is capture group: svg
-	typeOfFile := typeOfFiles[1]
-	s.logger.Debug("type of file", slog.Any("type", typeOfFile))
-
-	return typeOfFile, nil
-}
-
-func (s *implService) storeMediafileAndReturnFilename(ctx context.Context, subject string, mediaFile *models.File) (string, error) {
-	filename, err := s.makeMediafileName(subject, mediaFile)
-	if err != nil {
-		return "", err
-	}
-	s.logger.Debug("start store file", slog.Any("filename", filename))
-	err = s.storeMediafile(ctx, filename, mediaFile)
-
-	if err != nil {
-		s.logger.Error("failed store media file", slog.Any("filename", filename))
-		return "", err
-	}
-
-	return filename, nil
 }
 
 // Flashcard in anki expect example string like that:
@@ -323,4 +186,8 @@ func (s *implService) formatExampleField(flashcard *models.Flashcard) string {
 
 func (s *implService) formatPictureField(filename string) string {
 	return fmt.Sprintf("<img src='%s'>", filename)
+}
+
+func (s *implService) formatSynonymsField(flashcard *models.Flashcard) string {
+	return strings.Join(flashcard.Synonyms, ", ")
 }

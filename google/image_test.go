@@ -11,17 +11,18 @@ import (
 )
 
 func TestPositiveGetFile(t *testing.T) {
+	filename := "test-filename"
 	mockDownloader, googleImageProvider := initAllStructs(t)
 
 	mockDownloader.EXPECT().
-		Download(gomock.Any(), gomock.All()).
+		Download(gomock.Any(), filename, gomock.Any()).
 		Times(1).
 		Return(nil, nil)
 
 	r, err := googleImageProvider.Request(t.Context(), "test")
 	assert.Nil(t, err, "provider return some errors")
 
-	_, err = r.Get(t.Context(), 0)
+	_, err = r.Get(t.Context(), filename, 0)
 	assert.Nil(t, err, "query provider return some errors")
 
 }
@@ -30,13 +31,13 @@ func TestNegativeIndexOutOfRange(t *testing.T) {
 	mockDownloader, googleImageProvider := initAllStructs(t)
 
 	mockDownloader.EXPECT().
-		Download(gomock.Any(), gomock.All()).
+		Download(gomock.Any(), gomock.Any(), gomock.Any()).
 		Times(0)
 
 	p, err := googleImageProvider.Request(t.Context(), "test")
 	assert.Nil(t, err, "provider return some errors")
 
-	_, err = p.Get(t.Context(), 9999999)
+	_, err = p.Get(t.Context(), "filename", 9999999)
 	assert.NotNil(t, err, "provider didn't return error")
 	assert.ErrorIs(t, err, errIndexOutOfRange)
 

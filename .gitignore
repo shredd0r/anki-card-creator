@@ -1,3 +1,4 @@
 *_mock.go
+*.apkg
 config.yaml
 anki-card-creator

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/shredd0r/anki-card-creator/models"
@@ -156,6 +157,11 @@ func (p *implGemini) HealthCheck(ctx context.Context) error {
 }
 
 func (p *implGemini) wrapError(err error) error {
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		p.logger.Error("failed connection to gemini server")
+		return err
+	}
+
 	if !errors.As(err, &genai.APIError{}) {
 		return err
 	}

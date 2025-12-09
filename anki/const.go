@@ -1,0 +1,662 @@
+package anki
+
+const (
+	front_side_template = `
+<div class="s">
+	<div class="status-bar theme-fg theme-bg"></div>
+	<br>
+
+	{{#Paraphrase}}
+		<br>
+		<div class="paraphrase theme-border-left" id="paraphrase">{{Paraphrase}}</div>
+	{{/Paraphrase}}
+
+	{{#Picture}}
+		<br>
+		<div class="picture">{{Picture}}</div>
+	{{/Picture}}
+
+	<br>
+	<div>
+		<hr class="hr_long theme-bg"/>
+	</div>
+	<br>
+	<div>
+		<span class="word">{{type:Subject}}</span>
+	</div>
+</div>
+
+<script type="text/javascript">
+
+    /**
+     * Process parts of speech, colon highlight and colon masking
+     * @param s          the line to be processed
+     * @param full       true if colon masking is disabled
+     * @param pos_class  class of parts of speech
+     * @returns string
+     */
+    function proc(s, full, pos_class) {
+        var ts = ["a", "vi", "vt", "v", "art", "aux", "adj", "adv", "abbr", "ad", "int", "num", "conj", "prep", "pron", "cn", "un", "n", "suff", "pref", "p", "pl", "pp", "phrase", "mn", "fn", "nn"];
+        var r = "";
+        var x = s.indexOf(":");
+        if (x !== -1) {
+            r = "<b>" + proc(s.substring(0, x), true, pos_class) + ":</b>";  // colon highlight
+            if (full) r += s.substring(x + 1);  // colon masking
+            return r;
+        }
+        for (var i in ts) {
+            var t = ts[i] + ".";
+            if (s.startsWith(t)) {
+                r = "<h class=\"" + pos_class + "\">" + t + "</h>";  // tag
+                if (s.substring(t.length, t.length + 5) === "&amp;") {  // there are more tags to process
+                    r += proc(s.substring(t.length + 5), full, pos_class);
+                } else {
+                    if (full) r += s.substring(t.length);
+                }
+                return r;
+            }
+        }
+        if (full) return s;
+        return r;
+    }
+
+    /**
+     * Process parts of speech, colon highlight, colon masking (if full == false), ~ replacement and html fix
+     * @param elem       id of DOM element to process
+     * @param full       true if colon masking is disabled
+     * @param pos_class  class of parts of speech
+     * @param word       word to replace "~"
+     * @returns none
+     */
+    function run(elem, full, pos_class, word) {
+        elem = document.getElementById(elem);
+        if (elem) {
+            var ps = ("<div>" + elem.innerHTML + "</div>")
+                .replace(/(&nbsp;)/g, "\ ")    // fix html
+                .replace(/(\u00A0)/g, "<br>")  // fix html
+                .replace(/~/g, word)  // "~" replacement
+                .match(/(<\/?div>|<br>).+?(?=<\/?div>|<br>)/g);  // get lines out of html
+            var r = "";
+            for (var i in ps) {
+                r += "<div>" + proc(ps[i].replace(/<\/?div>|<br>/g, "").trim(), full, pos_class) + "</div>"
+            }
+            elem.innerHTML = r
+        }
+    }
+</script>
+<script type="text/javascript">
+    run("paraphrase", true, "pos theme-bg", "~");
+</script>`
+
+	back_side_template = `
+<div class="s">
+	<div class="status-bar theme-fg theme-bg"></div>
+	<br>
+  
+	{{#Paraphrase}}
+		<br>
+		<div class="paraphrase theme-border-left" id="paraphrase">{{Paraphrase}}</div>
+	{{/Paraphrase}}
+
+	{{#Picture}}
+		<br>
+		<div class="picture">{{Picture}}</div>
+	{{/Picture}}
+  
+  <br>
+  <div>
+		<hr class="hr_long theme-bg"/>
+	</div>
+
+	<div>
+		<span class="word">{{type:Subject}}</span>
+	</div>
+	
+	{{#Transcription}}
+		<br>
+		<div class="transcription">{{Transcription}}</div>
+		<br>
+	{{/Transcription}}
+
+	{{#Pronunciation}}
+		<div>
+    <hr class="hr_short theme-bg"/>
+    <span class="play-button theme-bg">[sound:{{Pronunciation}}]</span>
+    <hr class="hr_short theme-bg"/>
+	</div>
+	{{/Pronunciation}}
+	
+	{{^Pronunciation}}
+		<div>
+  		<hr class="hr_long theme-bg"/>
+		</div>
+	{{/Pronunciation}}
+   
+
+	{{#Synonyms}}
+		<br>
+		<div class="synonyms">
+			<span>Synonyms:</span>
+			<span><b>{{Synonyms}}</b></span>	
+		<div>
+	{{/Synonyms}}
+   
+	{{#Example}}
+		<br> <div class="example" id="example">{{Example}}</div>
+	{{/Example}}
+
+</div>
+
+<script type="text/javascript">
+
+    /**
+     * Process parts of speech, colon highlight and colon masking
+     * @param s          the line to be processed
+     * @param full       true if colon masking is disabled
+     * @param pos_class  class of parts of speech
+     * @returns string
+     */
+    function proc(s, full, pos_class) {
+        var ts = ["a", "vi", "vt", "v", "art", "aux", "adj", "adv", "abbr", "ad", "int", "num", "conj", "prep", "pron", "cn", "un", "n", "suff", "pref", "p", "pl", "pp", "phrase", "mn", "fn", "nn"];
+        var r = "";
+        var x = s.indexOf(":");
+        if (x !== -1) {
+            r = "<b>" + proc(s.substring(0, x), true, pos_class) + ":</b>";  // colon highlight
+            if (full) r += s.substring(x + 1);  // colon masking
+            return r;
+        }
+        for (var i in ts) {
+            var t = ts[i] + ".";
+            if (s.startsWith(t)) {
+                r = "<h class=\"" + pos_class + "\">" + t + "</h>";  // tag
+                if (s.substring(t.length, t.length + 5) === "&amp;") {  // there are more tags to process
+                    r += proc(s.substring(t.length + 5), full, pos_class);
+                } else {
+                    if (full) r += s.substring(t.length);
+                }
+                return r;
+            }
+        }
+        if (full) return s;
+        return r;
+    }
+
+    /**
+     * Process parts of speech, colon highlight, colon masking (if full == false), ~ replacement and html fix
+     * @param elem       id of DOM element to process
+     * @param full       true if colon masking is disabled
+     * @param pos_class  class of parts of speech
+     * @param word       word to replace "~"
+     * @returns none
+     */
+    function run(elem, full, pos_class, word) {
+        elem = document.getElementById(elem);
+        if (elem) {
+            var ps = ("<div>" + elem.innerHTML + "</div>")
+                .replace(/(&nbsp;)/g, "\ ")    // fix html
+                .replace(/(\u00A0)/g, "<br>")  // fix html
+                .replace(/~/g, word)  // "~" replacement
+                .match(/(<\/?div>|<br>).+?(?=<\/?div>|<br>)/g);  // get lines out of html
+            var r = "";
+            for (var i in ps) {
+                r += "<div>" + proc(ps[i].replace(/<\/?div>|<br>/g, "").trim(), full, pos_class) + "</div>"
+            }
+            elem.innerHTML = r
+        }
+    }
+	</script>
+	<script type="text/javascript">
+		run("paraphrase", true, "pos theme-bg", "{{text:Subject}}");
+		run("extension", true, "pos2 theme-border", "{{text:Subject}}");
+	</script>
+	<script type="text/javascript">
+		var P = document.getElementById("example");
+		if (P) {
+			P.innerHTML = P.innerHTML
+				.replace(/(\&nbsp\;)/g, "\ ")
+				.replace(/(\u00A0)/g, "<br>")
+				.replace(/(\.\<br\>)/g,"\. ")
+				.replace(/(\b{{text:Subject}}\w*?\b)/ig, "<b>$1</b>"); /* Auto Bold */
+		}
+	</script>`
+
+	css = `
+.card {
+    font-family: Helvetica Neue, sans-serif;
+    text-align: center;
+    color: black;
+    background-color: white;
+}
+
+.card {
+    font-size: 20px;
+}
+
+@media (min-width: 1200px) {
+    .card {
+        max-width: 1024px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+}
+
+.mobile .card {
+    font-size: 16px;
+}
+
+:root {
+    --recite-color: #338ECA;
+    --recite-light: #b7d5eb;
+    --spelling-color: #56a844;
+    --spelling-light: #c1e7b8;
+    --dictation-color: #ec6c4f;
+    --dictation-light: #f7c4b8;
+    --filling-color: #66CDAA;
+    --filling-light: #E0FFFF;
+
+    --night-light: white;
+}
+
+/* Top Status Bar */
+.status-bar {
+    letter-spacing: 5px;
+    text-align: center;
+    border: 0;
+    border-radius: 30px;
+}
+
+.status-bar {
+    font: 600 18px/35px times;
+}
+
+.mobile .status-bar {
+    font: 400 15px/28px times;
+}
+
+
+/* Theme Background Colors */
+.r .theme-bg {
+    background-color: var(--recite-color);
+}
+
+.s .theme-bg {
+    background-color: var(--spelling-color);
+}
+
+.d .theme-bg {
+    background-color: var(--dictation-color);
+}
+
+.f .theme-bg {
+    background-color: var(--filling-color);
+}
+
+/* Theme Foreground Colors */
+.r .theme-fg {
+    color: var(--recite-light);
+}
+
+.s .theme-fg {
+    color: var(--spelling-light);
+}
+
+.d .theme-fg {
+    color: var(--dictation-light);
+}
+
+.f .theme-fg {
+    color: var(--filling-light);
+}
+
+.nightMode .theme-fg {
+    color: var(--night-light);
+}
+
+/* Theme Boarder Colors */
+.r .theme-border {
+    border-color: var(--recite-color);
+}
+
+.s .theme-border {
+    border-color: var(--spelling-color);
+}
+
+.d .theme-border {
+    border-color: var(--dictation-color);
+}
+
+.f .theme-border {
+    border-color: var(--filling-color);
+}
+
+/* Theme of the left border */
+.r .theme-border-left {
+    border-left: 3px solid var(--recite-color);
+}
+
+.s .theme-border-left {
+    border-left: 3px solid var(--spelling-color);
+}
+
+.d .theme-border-left {
+    border-left: 3px solid var(--dictation-color);
+}
+
+.f .theme-border-left {
+    border-left: 3px solid var(--filling-color);
+}
+
+/* Subject */
+.subject {
+    font-size: 28px;
+}
+
+.subject {
+    color: black;
+}
+
+.transcription {
+	font-size: 24px;
+}
+
+.picture {
+	width=400px;
+	height=auto;
+	display: block;
+	margin-left: auto;
+	margin-right: auto;
+	width: 50%;
+}
+
+.nightMode .subject {
+    color: white;
+}
+
+.before-subject {
+    display: inline-block;
+    width: 35vw;
+    max-width: 358px;
+    text-align: right;
+}
+
+.mobile .before-subject {
+    text-align: left;
+    width: 90vw;
+}
+
+.after-subject {
+    display: inline-block;
+    width: 35vw;
+    max-width: 358px;
+    text-align: left;
+}
+
+.mobile .after-subject {
+    text-align: right;
+    width: 90vw;
+}
+
+#subjectInExample {
+    color: grey;
+}
+
+/* Division lines */
+.hr_short {
+    width: 39%;
+    margin: 3px 7px;
+}
+
+.mobile .hr_short {
+    width: 39%;
+    margin: 2px 2px;
+}
+
+.hr_long {
+    width: 87%;
+}
+
+/* Override the style of hr */
+hr {
+    height: 2px;
+    border-radius: 3px;
+    border: 0 solid #F5F5F5;
+    display: inline-block;
+}
+
+
+/* Audio buttons */
+.play-button {
+    border-radius: 3px;
+    cursor: pointer;
+    height: 26px;
+    width: 26px;
+    font-size: 12px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* Adjust button provided by Anki */
+.replay-button {
+    width: 20px;
+    height: 20px;
+    vertical-align: middle;
+    border: none;
+    display: inline-block;
+}
+
+.mobile .replay-button {
+    margin-top: 4px;
+}
+
+.replay-button svg {
+    width: 20px;
+    height: 20px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.replay-button svg circle {
+    display: none;
+}
+
+/* Style of Part of Speech in Paraphrase */
+.pos {
+    font-size: 18px;
+    font-weight: normal;
+    color: #FFF;
+    padding: 2px 4px 3px 4px;
+    margin: 0px 3px;
+    border-radius: 2px;
+}
+
+.mobile .pos {
+    font-size: 16px;
+    font-weight: normal;
+    color: #FFF;
+    padding: 0px 2px 1px 4px;
+    margin: 0px 5px;
+    border-radius: 2px;
+}
+
+/* Style of Part of Speech in Extension */
+.pos2 {
+    font-size: 16px;
+    font-weight: normal;
+    padding: 2px 4px 3px 4px;
+    margin: 0px 3px;
+    border-radius: 2px;
+    border-style: solid;
+    border-width: 1px;
+}
+
+.mobile .pos2 {
+    font-size: 16px;
+    font-weight: normal;
+    padding: 0px 2px 1px 4px;
+    margin: 0px 5px;
+    border-radius: 2px;
+    border-style: solid;
+    border-width: 1px;
+}
+
+/* Style of Paraphrase */
+.paraphrase {
+    font: 20px/190% Helvetica Neue;
+    text-align: left;
+    margin-left: 0em;
+    padding: 0.1em 0em 0.1em 0.5em;
+}
+
+.mobile .paraphrase {
+    font: 18px/190% Helvetica Neue;
+    text-align: left;
+    margin-left: 0em;
+    padding: 0.3em 0em 0.3em 0.5em;
+}
+
+.synonyms {
+	font: 18px Helvetica Neue;
+}
+
+/* Style of Example */
+.example {
+    font: 18px/150% Helvetica Neue;
+    text-align: left;
+    padding: 0.5em;
+    margin-left: 0.2em;
+}
+
+.mobile .example {
+    font: 16px/120% Helvetica Neue;
+    text-align: left;
+    padding: 0.5em;
+    margin-left: 0.2em;
+}
+
+.r .example {
+    color: #222;
+    background-color: #E9EFF2;
+}
+
+.s .example {
+    color: #222;
+    background-color: #E9F4E7;
+}
+
+.d .example {
+    color: #222;
+    background-color: #F8EEEC;
+}
+
+.f .example {
+    color: #222;
+    background-color: #DFFFEB;
+}
+
+.nightMode .example {
+    color: var(--night-light);
+    background-color: #363636;
+}
+
+/* Style of the hint component */
+.my-hint {
+    text-align: left;
+    margin-left: 0em;
+    padding: 0.3em 0em 0.3em 1em;
+}
+
+.my-hint {
+    font: 16px/18px Helvetica Neue;
+}
+
+.mobile .my-hint {
+    font: 14px/22px Helvetica Neue;
+}
+
+/* Overwrite style of hint of Anki */
+.hint {
+    text-align: left;
+    text-indent: 0em;
+    color: #333333;
+    line-height: 20px;
+    padding: 0.3em 0em 0.3em 0.5em;
+    display: inline;
+}
+
+.nightMode .hint {
+    color: #CCCCCC;
+}
+
+.hint {
+    font: 18px/25px Helvetica Neue;
+}
+
+.mobile .hint {
+    font: 14px/20px Helvetica Neue;
+}
+
+
+/* Style of Spelling Word */
+.word {
+    font: 20px/35px Helvetica Neue;
+    letter-spacing: 1px;
+}
+
+.nightMode .word {
+    color: white;
+    background-color: black;
+}
+
+.nightMode input { /* Override input text style */
+    color: white;
+    background-color: #363636;
+    border: none;
+    padding: 5px 7px 5px 7px;
+}
+
+.typeGood {
+    border: 2px solid var(--spelling-color);
+    border-radius: 0px;
+    font: 28px/30px times;
+    background-color: var(--spelling-color);
+    text-align: center;
+    letter-spacing: 1px;
+    word-spacing: 1px;
+    color: white;
+    padding: 0px 0px 1px 0px;
+}
+
+.typeMissed {
+    border: 2px solid var(--dictation-color);
+    border-radius: 0px;
+    font: 28px/30px times;
+    background-color: var(--dictation-color);
+    text-align: center;
+    letter-spacing: 1px;
+    word-spacing: 1px;
+    color: white;
+    padding: 0px 0px 1px 0px;
+}
+
+.typeBad {
+    border: 2px solid #728d98;
+    border-radius: 0px;
+    font: 28px/30px times;
+    background-color: #728d98;
+    text-align: center;
+    letter-spacing: 1px;
+    word-spacing: 1px;
+    color: white;
+    padding: 0px 0px 1px 0px;
+}
+
+.typebutton {
+    border-radius: 3px;
+    border: none;
+    padding: 5px 7px 5px 7px;
+    margin: 3px 3px;
+    font-size: 16px;
+    color: #fff;
+    cursor: pointer;
+}`
+)

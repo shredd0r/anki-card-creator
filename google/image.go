@@ -31,7 +31,7 @@ type Image interface {
 
 type Result interface {
 	// Get - return image from opened web page
-	Get(ctx context.Context, numOfPicture uint) (*models.File, error)
+	Get(ctx context.Context, filenameWithoutType string, numOfPicture uint) (*models.File, error)
 }
 
 func NewImageProvider(logger *slog.Logger, browser playwright.Browser, fileDownloader downloader.File) Image {
@@ -70,7 +70,7 @@ func (p *implImage) Request(ctx context.Context, searchQuery string) (Result, er
 // Get - method for getting picture from Google Image. Picture returns as buffer reader, not saving in disk
 // numOfPicture - index for getting picture from list of matched pictures
 // searchQuery - query for searching pictures
-func (p *implResult) Get(ctx context.Context, numOfPicture uint) (*models.File, error) {
+func (p *implResult) Get(ctx context.Context, filenameWithoutType string, numOfPicture uint) (*models.File, error) {
 	defer func() {
 		err := p.page.Close()
 		if err != nil {
@@ -113,7 +113,7 @@ func (p *implResult) Get(ctx context.Context, numOfPicture uint) (*models.File, 
 		}
 	}
 
-	return p.fileDownloader.Download(ctx, imgUrl)
+	return p.fileDownloader.Download(ctx, filenameWithoutType, imgUrl)
 }
 
 func (p *implImage) moveToPageWithImages(search string) (playwright.Page, error) {

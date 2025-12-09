@@ -61,7 +61,6 @@ You can put into run command one json file or directory with files:
 ## Configuration
 You can use configuration yaml file or transmit volumes by run parameters
 * ***debugging*** - (type: ***bool***) debugging mode, turn on showing browser window created by playwright, debug logging;
-* ***input-path*** - (could be one file or directory with files) path to json file with subjects; 
 * ***queue.size*** - (type: ***uint***) ***default: 10***, size of flashcard creating at the same time;
 * ***gemini*** - indicates that`s for generate volumes will be used Gemini;  
 * ***gemini.token*** - (type: ***string***) developing token created in your developer account in Google;

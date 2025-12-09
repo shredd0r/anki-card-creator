@@ -2,27 +2,33 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"path"
+	"sync"
+	"time"
 
 	"github.com/shredd0r/anki-card-creator/anki"
 	"github.com/shredd0r/anki-card-creator/card"
 	"github.com/shredd0r/anki-card-creator/config"
 	"github.com/shredd0r/anki-card-creator/extractor"
-	"golang.org/x/sync/errgroup"
+	"github.com/shredd0r/anki-card-creator/models"
 )
 
-const default_batch_size = uint(10)
-const template_name = "Maple Template X"
+const (
+	default_queue_size = uint(10)
+)
 
 type AnkiCardCreator struct {
 	queueSize   uint
+	outputPath  string
 	logger      *slog.Logger
 	ankiService anki.Service
 	cardCreator card.Creator
 }
 
 func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService anki.Service, cardCreator card.Creator) *AnkiCardCreator {
-	queueSize := default_batch_size
+	queueSize := default_queue_size
 
 	if cfg.QueueSize != 0 {
 		queueSize = cfg.QueueSize
@@ -30,6 +36,7 @@ func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService anki
 
 	return &AnkiCardCreator{
 		queueSize:   queueSize,
+		outputPath:  cfg.Output,
 		logger:      logger.WithGroup("anki-card-creator"),
 		ankiService: ankiService,
 		cardCreator: cardCreator,
@@ -42,49 +49,85 @@ func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService anki
 func (c *AnkiCardCreator) Create(ctx context.Context, targets *[]extractor.TargetInfo) error {
 	c.logger.Info("start creating flashcard and store it in anki")
 
-	errg := errgroup.Group{}
-	chanQueue := make(chan bool, c.queueSize)
+	chanErr := make(chan error)
+	chanFlashcard := make(chan *models.Flashcard, c.queueSize)
+	ctxWithCancel, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	go c.createAllFlashcards(ctxWithCancel, cancel, targets, chanFlashcard, chanErr)
+	go c.addFlashcardToPackage(ctxWithCancel, chanFlashcard)
+
+	for {
+		select {
+		case <-ctxWithCancel.Done():
+			{
+				c.logger.Info("creating flashcards is done, start formating package")
+				return c.ankiService.SavePackage(ctx, path.Join(c.outputPath, c.generateAPKGFileName()))
+			}
+		case err := <-chanErr:
+			{
+				c.logger.Error("received error during create flashcard", slog.Any("err", err))
+				return err
+			}
+		}
+	}
+}
+
+func (c *AnkiCardCreator) createAllFlashcards(ctxWithCancel context.Context, cancel context.CancelFunc, targets *[]extractor.TargetInfo, chanFlashcard chan *models.Flashcard, chanErr chan error) {
+	chanQueue := make(chan struct{}, c.queueSize)
+	wg := sync.WaitGroup{}
+	defer cancel()
 
 	for _, target := range *targets {
 		for _, subject := range target.Subjects {
-			errg.Go(func() error {
-				// Realese the queue
-				defer func() { <-chanQueue }()
-				chanQueue <- true
+			wg.Add(1)
+			go func() {
+				// Realese the queue and cancel child ctx
+				defer func() {
+					wg.Done()
+					<-chanQueue
+				}()
+				chanQueue <- struct{}{}
 				c.logger.Info("start creating flashcard", slog.Any("subject", subject))
-				// This method return only critical error, thats why checking unessecery
-				isExist, err := c.ankiService.IsCardAlreadyExist(ctx, subject, target.DeckName)
-				if err != nil {
-					return err
-				}
-				if isExist {
-					c.logger.Debug("flashcard already exist, skip it", slog.Any("subject", subject), slog.Any("deckname", target.DeckName))
-					return nil
-				}
 
-				flashcard, err := c.cardCreator.Create(ctx, target.DeckName, subject, target.Tags)
+				flashcard, err := c.cardCreator.Create(ctxWithCancel, target.DeckName, subject, target.Tags)
 				if err != nil {
-					return err
+					chanErr <- err
 				}
+				chanFlashcard <- flashcard
 
-				err = c.ankiService.StoreNewCard(ctx, template_name, flashcard)
-				if err != nil {
-					return err
-				}
 				c.logger.Info("creating flashcard is done", slog.Any("subject", subject))
-				return nil
-			})
+			}()
 		}
 	}
+	wg.Wait()
+}
 
-	err := errg.Wait()
-	if err != nil {
-		c.logger.Error("failed create one of card, stop creatings cards")
-		return err
+func (c *AnkiCardCreator) addFlashcardToPackage(ctxWithCancel context.Context, chanFlashcard chan *models.Flashcard) {
+	for {
+		select {
+		case <-ctxWithCancel.Done():
+			{
+				c.logger.Debug("context is done, stop goroutine 'addFlashcardToPackage'")
+				close(chanFlashcard)
+				return
+			}
+		case flashcard, ok := <-chanFlashcard:
+			{
+				if flashcard != nil {
+					c.ankiService.AddFlashcard(ctxWithCancel, flashcard)
+				}
+				if !ok {
+					c.logger.Debug("channel for flashcards already closed, stop goroutine 'addFlashcardToPackage'")
+					return
+				}
+			}
+		}
 	}
-	c.logger.Info("creating flashcards is done")
+}
 
-	return nil
+func (c *AnkiCardCreator) generateAPKGFileName() string {
+	return fmt.Sprintf("generated-flashcards-%d.apkg", time.Now().UnixMilli())
 }
 
 func (c *AnkiCardCreator) isCriticalError(err error) bool {
