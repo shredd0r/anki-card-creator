@@ -91,7 +91,7 @@ func main() {
 			},
 			&cli.DurationFlag{
 				Name:     "ollama.timeout",
-				Usage:    "timeout seconds for wating response from server",
+				Usage:    "timeout duration for wating response from server",
 				Value:    time.Minute * 5,
 				Category: "OLLAMA OPTIONS",
 			},
