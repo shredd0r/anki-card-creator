@@ -11,6 +11,7 @@ import (
 
 	"github.com/prathyushnallamothu/ollamago"
 	"github.com/shredd0r/anki-card-creator/models"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -41,6 +42,8 @@ const (
 				"analysis": { "type": "string" }
 			}
 		}`
+	thinking = "deepseek-r1:14b"
+	vision   = "gemma3"
 )
 
 var (
@@ -66,7 +69,7 @@ func (p *ollama) GenerateCardContent(ctx context.Context, subject string, usingC
 	p.logger.Debug("start generate card content", slog.Any("subject", subject))
 
 	resp, err := p.client.Generate(ctx, ollamago.GenerateRequest{
-		Model:  p.model,
+		Model:  thinking,
 		Prompt: getPromptRequestBy(subject, usingContext),
 		Stream: false,
 		System: systemInstructionForCardContent,
@@ -90,7 +93,7 @@ func (p *ollama) GenerateCardContent(ctx context.Context, subject string, usingC
 func (p *ollama) RatePicture(ctx context.Context, subject string, picture *models.File) (*uint8, error) {
 	p.logger.Debug("start rate picture", slog.Any("subject", subject))
 	resp, err := p.client.Generate(ctx, ollamago.GenerateRequest{
-		Model:  p.model,
+		Model:  vision,
 		Prompt: getPromptRequestBy(subject, nil),
 		Stream: false,
 		System: systemInstructionForRatePicture,
@@ -117,14 +120,35 @@ func (p *ollama) RatePicture(ctx context.Context, subject string, picture *model
 }
 
 func (p *ollama) HealthCheck(ctx context.Context) error {
+	p.logger.Debug("start healthcheck on ollama server")
+	errwg, childCtx := errgroup.WithContext(ctx)
+
+	errwg.Go(
+		func() error {
+			return p.healthCheck(childCtx, thinking, "thinking")
+		})
+	errwg.Go(
+		func() error {
+			return p.healthCheck(childCtx, vision, "vision")
+
+		})
+	return errwg.Wait()
+}
+
+func (p *ollama) healthCheck(ctx context.Context, modelName string, modelType string) error {
+	p.logger.Debug("make request to model", slog.Any("model type", modelType))
+
 	resp, err := p.client.Generate(ctx, ollamago.GenerateRequest{
-		Model:  p.model,
+		Model:  modelName,
 		Prompt: "My name is Creator, whats yours?",
 	})
 
 	if p.handleOllamaError(resp, err) != nil {
+		p.logger.Error("received error from ollama server", slog.Any("model type", modelType))
 		return err
 	}
+
+	p.logger.Debug("model return success response", slog.Any("model name", modelName))
 	return nil
 }
 

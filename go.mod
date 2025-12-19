@@ -7,6 +7,7 @@ require (
 	github.com/playwright-community/playwright-go v0.5200.0
 	github.com/prathyushnallamothu/ollamago v1.0.1-0.20250819150749-32de4bf4404e
 	go.uber.org/mock v0.6.0
+	golang.org/x/sync v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

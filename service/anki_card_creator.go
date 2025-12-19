@@ -50,16 +50,18 @@ func (c *AnkiCardCreator) Create(ctx context.Context, targets *[]extractor.Targe
 	c.logger.Info("start creating flashcard and store it in anki")
 
 	chanErr := make(chan error)
+	chanCompleteAddFlashcards := make(chan struct{})
 	chanFlashcard := make(chan *models.Flashcard, c.queueSize)
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	go c.createAllFlashcards(ctxWithCancel, cancel, targets, chanFlashcard, chanErr)
-	go c.addFlashcardToPackage(ctxWithCancel, chanFlashcard)
+	go c.addFlashcardToPackage(ctxWithCancel, chanFlashcard, chanCompleteAddFlashcards)
 
 	for {
 		select {
 		case <-ctxWithCancel.Done():
+		case <-chanCompleteAddFlashcards:
 			{
 				c.logger.Info("creating flashcards is done, start formating package")
 				return c.ankiService.SavePackage(ctx, path.Join(c.outputPath, c.generateAPKGFileName()))
@@ -103,13 +105,14 @@ func (c *AnkiCardCreator) createAllFlashcards(ctxWithCancel context.Context, can
 	wg.Wait()
 }
 
-func (c *AnkiCardCreator) addFlashcardToPackage(ctxWithCancel context.Context, chanFlashcard chan *models.Flashcard) {
+func (c *AnkiCardCreator) addFlashcardToPackage(ctxWithCancel context.Context, chanFlashcard chan *models.Flashcard, chanComplete chan struct{}) {
 	for {
 		select {
 		case <-ctxWithCancel.Done():
 			{
 				c.logger.Debug("context is done, stop goroutine 'addFlashcardToPackage'")
 				close(chanFlashcard)
+				chanComplete <- struct{}{}
 				return
 			}
 		case flashcard, ok := <-chanFlashcard:

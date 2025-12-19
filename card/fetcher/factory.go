@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/shredd0r/anki-card-creator/config"
 	"github.com/shredd0r/anki-card-creator/extractor"
 	"github.com/shredd0r/anki-card-creator/llm"
 	"github.com/shredd0r/anki-card-creator/models"
@@ -25,13 +26,19 @@ type implCardContentFactory struct {
 	phraseCardContent  CardContent
 }
 
-func NewCardContentFactory(logger *slog.Logger, cambridgeExtractor extractor.Cambridge,
+func NewCardContentFactory(cfg config.Config, logger *slog.Logger, cambridgeExtractor extractor.Cambridge,
 	llmProvider llm.Provider) CardContentFactory {
+	var wordCardContent CardContent
+	if cfg.OnlyAI {
+		wordCardContent = NewWordCardContentByAI(logger, llmProvider, cambridgeExtractor)
+	} else {
+		wordCardContent = NewWordCardContentByCambridge(logger, llmProvider, cambridgeExtractor)
+	}
 	return &implCardContentFactory{
 		logger:             logger.WithGroup("field-component-fetcher-factory"),
 		cambridgeExtractor: cambridgeExtractor,
 		llmProvider:        llmProvider,
-		wordCardContent:    NewWordCardContent(logger, llmProvider, cambridgeExtractor),
+		wordCardContent:    wordCardContent,
 		phraseCardContent:  NewPhraseCardContent(logger, llmProvider),
 	}
 }

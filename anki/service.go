@@ -5,7 +5,9 @@ package anki
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
+	"math/rand"
 	"strings"
 
 	"github.com/npcnixel/genanki-go"
@@ -14,7 +16,7 @@ import (
 
 const (
 	model_id      = 10011001
-	model_name    = "card-generator-v.1.0.0"
+	model_name    = "card-generator-v1.0.0"
 	template_name = "card-generator-template"
 	default_tag   = "anki-card-creator"
 )
@@ -42,7 +44,7 @@ func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashc
 
 	deck, ok := s.decks[flashcard.DeckName]
 	if !ok {
-		deck = genanki.NewDeck(s.getIdForDeck(), flashcard.DeckName, "")
+		deck = genanki.NewDeck(s.getIdByString(flashcard.DeckName), flashcard.DeckName, "")
 		s.decks[flashcard.DeckName] = deck
 	}
 
@@ -63,7 +65,7 @@ func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashc
 		transcription = *flashcard.Transcription
 	}
 
-	noteId := s.getIdForNote(deck)
+	noteId := s.getIdForNote(deck, flashcard.Subject)
 	deck.AddNote(&genanki.Note{
 		ID:      noteId,
 		ModelID: model_id,
@@ -101,12 +103,16 @@ func (s *implService) SavePackage(ctx context.Context, pathToFile string) error 
 
 }
 
-func (s *implService) getIdForDeck() int64 {
-	return int64(len(s.decks) + 1)
+func (s *implService) getIdForNote(deck *genanki.Deck, subject string) int64 {
+	return s.getIdByString(fmt.Sprintf("%s,%s", deck.Name, subject))
 }
 
-func (s *implService) getIdForNote(deck *genanki.Deck) int64 {
-	return int64(len(deck.Notes) + 1)
+func (s *implService) getIdByString(str string) int64 {
+	h := fnv.New64a()
+	h.Write([]byte(str))
+	seed := int64(h.Sum64())
+
+	return rand.NewSource(seed).Int63()
 }
 
 func (s *implService) getFieldsForModel() []genanki.Field {

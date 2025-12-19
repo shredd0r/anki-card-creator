@@ -1,3 +1,6 @@
+# .DS_Store mac os folder customization info
+.DS_Store 
+
 *_mock.go
 *.apkg
 config.yaml

@@ -11,6 +11,7 @@ type Config struct {
 	Debugging bool          `yaml:"debugging"`
 	QueueSize uint          `yaml:"queue-size"`
 	Output    string        `yaml:"output"`
+	OnlyAI    bool          `yaml:"only-ai"`
 	Gemini    *GeminiConfig `yaml:"gemini"`
 	Ollama    *OllamaConfig `yaml:"ollama"`
 	Picture   PictureConfig `yaml:"picture"`

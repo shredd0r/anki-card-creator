@@ -44,6 +44,7 @@ type Cambridge interface {
 	GetExplains(ctx context.Context, subject string) (*[]string, error)
 	GetTransacription(ctx context.Context, subject string) (*string, error)
 	GetCard(ctx context.Context, subject string) (*CambridgeCard, error)
+	GetPronunciation(ctx context.Context, subject string) (*models.File, error)
 }
 
 type implCambridge struct {
@@ -159,6 +160,18 @@ func (e *implCambridge) GetCard(ctx context.Context, subject string) (*Cambridge
 		Explains:      *explains,
 		Examples:      *examples,
 	}, nil
+}
+
+func (e *implCambridge) GetPronunciation(ctx context.Context, subject string) (*models.File, error) {
+	page, err := e.gotoSubjectPage(ctx, subject)
+	if err != nil {
+		return nil, err
+	}
+	defer page.Close()
+
+	mainPageLocator := page.Locator("html")
+
+	return e.getPronunciation(ctx, subject, mainPageLocator)
 }
 
 func (e *implCambridge) gotoSubjectPage(ctx context.Context, subject string) (playwright.Page, error) {

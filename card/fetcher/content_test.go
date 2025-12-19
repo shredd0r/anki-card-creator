@@ -37,7 +37,7 @@ func TestPostiveCases(t *testing.T) {
 	transcriptionForWord := "word-transcription"
 	testcases := []fieldFetcherPositiveCase{
 		{
-			Name:                "field fetcher for word",
+			Name:                "field fetcher for word by cambridge",
 			Subject:             "subject-word",
 			ExpectedSubjectType: models.SubjectTypeWord,
 			ExpectedCardContent: models.CardContent{
@@ -47,8 +47,23 @@ func TestPostiveCases(t *testing.T) {
 				Examples:      []string{"word-example-1", "word-example-2"},
 				Synonyms:      []string{"word-synonym-1", "word-synonym-2"},
 			},
-			InitCardContentFetcherForTest:   initCardContentFetcherForWord,
+			InitCardContentFetcherForTest:   initCardContentFetcherForWordByCambridge,
 			CambridgeExtractorExpectedCalls: cambridgeExtractorExpectedCallsForReturnVolumes,
+			LLMProviderExpectedCalls:        llmProviderExpectedCallsGenerateCardContent,
+		},
+		{
+			Name:                "field fetcher for word by AI",
+			Subject:             "subject-word",
+			ExpectedSubjectType: models.SubjectTypeWord,
+			ExpectedCardContent: models.CardContent{
+				Paraphrase:    "word-paraphrase",
+				Transcription: &transcriptionForWord,
+				Pronunciation: &models.File{Content: []byte("word-content")},
+				Examples:      []string{"word-example-1", "word-example-2"},
+				Synonyms:      []string{"word-synonym-1", "word-synonym-2"},
+			},
+			InitCardContentFetcherForTest:   initCardContentFetcherForWordByAI,
+			CambridgeExtractorExpectedCalls: cambridgeExtractorExpectedCallOnlyGetPronunciation,
 			LLMProviderExpectedCalls:        llmProviderExpectedCallsGenerateCardContent,
 		},
 		{
@@ -62,7 +77,7 @@ func TestPostiveCases(t *testing.T) {
 				Examples:      []string{"word-example-1", "word-example-2"},
 				Synonyms:      []string{"word-synonym-1", "word-synonym-2"},
 			},
-			InitCardContentFetcherForTest:   initCardContentFetcherForWord,
+			InitCardContentFetcherForTest:   initCardContentFetcherForWordByCambridge,
 			CambridgeExtractorExpectedCalls: cambridgeExtractorExpectedCallsReturnVolumesExceptExamples,
 			LLMProviderExpectedCalls:        llmProviderExpectedCallsGenerateCardContent,
 		},
@@ -121,12 +136,20 @@ func TestNegativeCases(t *testing.T) {
 			Name:                            "field component fetcher for word, cambridge extractor return error",
 			SubjectType:                     models.SubjectTypeWord,
 			ExpectedMessageErr:              "error from cambridge card extractor",
-			InitCardContentFetcherForTest:   initCardContentFetcherForWord,
+			InitCardContentFetcherForTest:   initCardContentFetcherForWordByCambridge,
 			CambridgeExtractorExpectedCalls: cambridgeExtractorExpectedCallsEveryTimeReturnErr,
-			LLMProviderExpectedCalls:        llmProviderWithoutExpectedCalls,
+			LLMProviderExpectedCalls:        llmProviderExpectedOneOrNoneCall,
 		},
 		{
-			Name:                            "field component fetcher for phrase, gemini provider return error",
+			Name:                            "field component fetcher for word, llm provider return error",
+			SubjectType:                     models.SubjectTypeWord,
+			ExpectedMessageErr:              "error from llm provider",
+			InitCardContentFetcherForTest:   initCardContentFetcherForWordByAI,
+			CambridgeExtractorExpectedCalls: cambridgeExtractorExpectOneOrNoneGetPronunciationCall,
+			LLMProviderExpectedCalls:        llmProviderExpectedCallsReturnErr,
+		},
+		{
+			Name:                            "field component fetcher for phrase, llm provider return error",
 			SubjectType:                     models.SubjectTypePhrase,
 			ExpectedMessageErr:              "error from llm provider",
 			InitCardContentFetcherForTest:   initCardContentFetcherForPhrase,
@@ -153,12 +176,24 @@ func TestNegativeCases(t *testing.T) {
 	}
 }
 
-func initCardContentFetcherForWord(logger *slog.Logger, ce extractor.Cambridge, llmp llm.Provider) CardContent {
-	return NewWordCardContent(logger, llmp, ce)
+func initCardContentFetcherForWordByCambridge(logger *slog.Logger, ce extractor.Cambridge, llmp llm.Provider) CardContent {
+	return NewWordCardContentByCambridge(logger, llmp, ce)
+}
+
+func initCardContentFetcherForWordByAI(logger *slog.Logger, ce extractor.Cambridge, llmp llm.Provider) CardContent {
+	return NewWordCardContentByAI(logger, llmp, ce)
 }
 
 func initCardContentFetcherForPhrase(logger *slog.Logger, ce extractor.Cambridge, llmp llm.Provider) CardContent {
 	return NewPhraseCardContent(logger, llmp)
+}
+
+func cambridgeExtractorExpectedCallOnlyGetPronunciation(subject string, expectedCardContent *models.CardContent, ce *mock_extractor.MockCambridge) {
+	ce.
+		EXPECT().
+		GetPronunciation(gomock.Any(), subject).
+		Times(1).
+		Return(expectedCardContent.Pronunciation, nil)
 }
 
 func cambridgeExtractorExpectedCallsForReturnVolumes(subject string, expectedCardContent *models.CardContent, ce *mock_extractor.MockCambridge) {
@@ -200,15 +235,23 @@ func cambridgeExtractorExpectedCallsEveryTimeReturnErr(subject string, expectedC
 func cambridgeExtractorWithoutExpectedCalls(subject string, expectedCardContent *models.CardContent, ce *mock_extractor.MockCambridge) {
 }
 
+func cambridgeExtractorExpectOneOrNoneGetPronunciationCall(subject string, expectedCardContent *models.CardContent, ce *mock_extractor.MockCambridge) {
+	ce.
+		EXPECT().
+		GetPronunciation(gomock.Any(), subject).
+		AnyTimes()
+}
+
 func llmProviderExpectedCallsGenerateCardContent(subject string, usingContext *[]string, expectedCardContent *models.CardContent, llmp *mock_llm.MockProvider) {
 	llmp.
 		EXPECT().
 		GenerateCardContent(gomock.Any(), subject, usingContext).
 		Times(1).
 		Return(&llm.GeneratedCardContent{
-			Paraphrase: expectedCardContent.Paraphrase,
-			Examples:   expectedCardContent.Examples,
-			Synonyms:   expectedCardContent.Synonyms,
+			Paraphrase:    expectedCardContent.Paraphrase,
+			Transcription: expectedCardContent.Transcription,
+			Examples:      expectedCardContent.Examples,
+			Synonyms:      expectedCardContent.Synonyms,
 		}, nil)
 }
 
@@ -220,6 +263,9 @@ func llmProviderExpectedCallsReturnErr(subject string, usingContext *[]string, e
 		Return(nil, errors.New("error from llm provider"))
 }
 
-func llmProviderWithoutExpectedCalls(subject string, usingContext *[]string, expectedCardContent *models.CardContent, llmp *mock_llm.MockProvider) {
-
+func llmProviderExpectedOneOrNoneCall(subject string, usingContext *[]string, expectedCardContent *models.CardContent, llmp *mock_llm.MockProvider) {
+	llmp.
+		EXPECT().
+		GenerateCardContent(gomock.Any(), subject, usingContext).
+		AnyTimes()
 }

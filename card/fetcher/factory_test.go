@@ -5,12 +5,14 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/shredd0r/anki-card-creator/config"
 	"github.com/shredd0r/anki-card-creator/models"
 	"github.com/stretchr/testify/assert"
 )
 
 type factoryPositiveCase struct {
 	Name         string
+	OnlyAI       bool
 	SubjectType  models.SubjectType
 	ExpectedType string
 }
@@ -18,9 +20,16 @@ type factoryPositiveCase struct {
 func TestPositiveTests(t *testing.T) {
 	testcases := []factoryPositiveCase{
 		{
-			Name:         "get field fetcher for word",
+			Name:         "get field fetcher for word by cambridge dictionary",
+			OnlyAI:       false,
 			SubjectType:  models.SubjectTypeWord,
-			ExpectedType: "*fetcher.wordCardContent",
+			ExpectedType: "*fetcher.wordCardContentByCambridge",
+		},
+		{
+			Name:         "get field fetcher for word by llm",
+			OnlyAI:       true,
+			SubjectType:  models.SubjectTypeWord,
+			ExpectedType: "*fetcher.wordCardContentByAI",
 		},
 		{
 			Name:         "get field fetcher for phrase",
@@ -31,7 +40,7 @@ func TestPositiveTests(t *testing.T) {
 
 	logger := slog.Default()
 	for _, testcase := range testcases {
-		factory := NewCardContentFactory(logger, nil, nil)
+		factory := NewCardContentFactory(config.Config{OnlyAI: testcase.OnlyAI}, logger, nil, nil)
 
 		t.Run(testcase.Name, func(t *testing.T) {
 			fieldFetcher, err := factory.Get(testcase.SubjectType)
@@ -44,7 +53,7 @@ func TestPositiveTests(t *testing.T) {
 
 func TestUnsupportedSubjectType(t *testing.T) {
 	logger := slog.Default()
-	factory := NewCardContentFactory(logger, nil, nil)
+	factory := NewCardContentFactory(config.Config{}, logger, nil, nil)
 
 	fieldFetcher, err := factory.Get(models.SubjectTypeNone)
 	assert.Nil(t, fieldFetcher)
