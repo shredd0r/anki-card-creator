@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/shredd0r/anki-card-creator/downloader"
 	"github.com/shredd0r/anki-card-creator/extractor"
 	"github.com/shredd0r/anki-card-creator/google"
+	"github.com/shredd0r/anki-card-creator/internal/version"
 	"github.com/shredd0r/anki-card-creator/llm"
 	"github.com/shredd0r/anki-card-creator/service"
 	"github.com/urfave/cli/v3"
@@ -31,11 +33,70 @@ func main() {
 	cmd := &cli.Command{
 		Name:  "anki-card-creator",
 		Usage: "Utilities for generate anki flashcards",
-		Arguments: []cli.Argument{
-			&cli.StringArg{
-				Name:        "input-path",
-				UsageText:   "path to json file with subjects, could be one file or directory with files",
-				Destination: &pathToSubjects,
+		Commands: []*cli.Command{
+			{
+				Name:  "gen",
+				Usage: "Command for generate flashcard from json files",
+				Arguments: []cli.Argument{
+					&cli.StringArg{
+						Name:        "input-path",
+						UsageText:   "path to json file with subjects, could be one file or directory with files",
+						Destination: &pathToSubjects,
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					logger.Info(fmt.Sprintf("current version: %s", version.Version))
+					logger.Info("start initialization modules for creation flashcards")
+					inputPath := cmd.StringArg("input-path")
+					if err := checkInputPath(inputPath); err != nil {
+						return err
+					}
+
+					browser, _, targetExtractor, ankiCardCreator, err := initAllStructs(ctx, logger, cmd)
+					if err != nil {
+						return err
+					}
+					defer browser.Close()
+
+					isFile, err := isPathToFile(pathToSubjects)
+					if err != nil {
+						return err
+					}
+					var targets *[]extractor.TargetInfo
+					if isFile {
+						targets, err = targetExtractor.GetFromFile(ctx, pathToSubjects)
+					} else {
+						targets, err = targetExtractor.GetFromDir(ctx, pathToSubjects)
+					}
+					if err != nil {
+						return err
+					}
+
+					return ankiCardCreator.Create(ctx, targets)
+				},
+			},
+			{
+				Name:  "test-conn",
+				Usage: "Command for checking connection to AI server",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					logger.Info(fmt.Sprintf("current version: %s", version.Version))
+					logger.Info("start initialization modules for testing connection")
+
+					browser, flashcardCreator, _, _, err := initAllStructs(ctx, logger, cmd)
+					if err != nil {
+						return err
+					}
+					defer browser.Close()
+
+					flashcard, err := flashcardCreator.Create(ctx, "testing-connection", "hello", &[]string{"Greetings"})
+					if err != nil {
+						return err
+					}
+
+					logger.Info(fmt.Sprintf("flashcard for %s successful created", flashcard.Subject))
+
+					return nil
+				},
 			},
 		},
 		Flags: []cli.Flag{
@@ -95,6 +156,16 @@ func main() {
 				Usage:    "model name started on your ollama server, which will be used for generate volumes",
 				Category: "OLLAMA OPTIONS",
 			},
+			&cli.StringFlag{
+				Name:     "ollama.model.thinking",
+				Usage:    "if you want using different model for generate text, put model name to this flag",
+				Category: "OLLAMA OPTIONS",
+			},
+			&cli.StringFlag{
+				Name:     "ollama.model.vision",
+				Usage:    "if you want using different model for rate picture, put model name to this flag",
+				Category: "OLLAMA OPTIONS",
+			},
 			&cli.DurationFlag{
 				Name:     "ollama.timeout",
 				Usage:    "timeout duration for wating response from server",
@@ -124,58 +195,39 @@ func main() {
 				Usage: "path to config file with parameters",
 			},
 		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			inputPath := cmd.StringArg("input-path")
-			if err := checkInputPath(inputPath); err != nil {
-				return err
-			}
-
-			cfg, err := getConfigFromFlags(cmd)
-			if err != nil {
-				return err
-			}
-			playwrightOpt := setDebuggingMode(*cfg)
-			firefox, err := browser.LaunchFirefox(playwrightOpt)
-			if err != nil {
-				return fmt.Errorf("failed start Firefox: %s", err.Error())
-			}
-			defer firefox.Close()
-
-			llmProvider, err := createLLMProviderByFlags(ctx, logger, *cfg)
-			if err != nil {
-				return err
-			}
-
-			ankiService := anki.NewService(logger)
-			fileDownloader := downloader.NewFile(logger)
-			googleImageProvider := google.NewImageProvider(logger, firefox, fileDownloader)
-			cambridgeExtractor := extractor.NewCambridge(logger, firefox, fileDownloader)
-			cardContentFactory := fetcher.NewCardContentFactory(*cfg, logger, cambridgeExtractor, llmProvider)
-			flashcardCreator := card.NewFlashcardCreator(cfg.Picture, logger, llmProvider, googleImageProvider, cardContentFactory)
-			targetExtractor := extractor.NewTargetExtractor(logger)
-			ankiCardCreator := service.NewAnkiCardCreator(*cfg, logger, ankiService, flashcardCreator)
-
-			isFile, err := isPathToFile(pathToSubjects)
-			if err != nil {
-				return err
-			}
-			var targets *[]extractor.TargetInfo
-			if isFile {
-				targets, err = targetExtractor.GetFromFile(ctx, pathToSubjects)
-			} else {
-				targets, err = targetExtractor.GetFromDir(ctx, pathToSubjects)
-			}
-			if err != nil {
-				return err
-			}
-
-			return ankiCardCreator.Create(ctx, targets)
-		},
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		logger.Error(err.Error())
 	}
+}
+
+func initAllStructs(ctx context.Context, logger *slog.Logger, cmd *cli.Command) (playwright.Browser, card.Creator, extractor.Target, *service.AnkiCardCreator, error) {
+	cfg, err := getConfigFromFlags(cmd)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	playwrightOpt := setDebuggingMode(*cfg)
+	firefox, err := browser.LaunchFirefox(playwrightOpt)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed start Firefox: %s", err.Error())
+	}
+
+	llmProvider, err := createLLMProviderByFlags(ctx, logger, *cfg)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	fileDownloader := downloader.NewFile(logger)
+	googleImageProvider := google.NewImageProvider(logger, firefox, fileDownloader)
+	cambridgeExtractor := extractor.NewCambridge(logger, firefox, fileDownloader)
+	cardContentFactory := fetcher.NewCardContentFactory(*cfg, logger, cambridgeExtractor, llmProvider)
+	flashcardCreator := card.NewFlashcardCreator(cfg.Picture, logger, llmProvider, googleImageProvider, cardContentFactory)
+	targetExtractor := extractor.NewTargetExtractor(logger)
+	ankiService := anki.NewService(logger)
+	ankiCardCreator := service.NewAnkiCardCreator(*cfg, logger, ankiService, flashcardCreator)
+
+	return firefox, flashcardCreator, targetExtractor, ankiCardCreator, nil
 }
 
 func checkInputPath(inputPath string) error {
@@ -230,13 +282,9 @@ func createGeminiProvider(ctx context.Context, logger *slog.Logger, cfg config.G
 }
 
 func createOllamaProvider(logger *slog.Logger, cfg config.OllamaConfig) (llm.Provider, error) {
-	if cfg.Model == "" {
-		return nil, fmt.Errorf("llm model doesn't choosen for ollama server")
-	}
-
 	client := ollamago.NewClient(ollamago.WithBaseURL(fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)), ollamago.WithHTTPClient(&http.Client{Timeout: cfg.Timeout}))
 
-	return llm.NewOllama(logger, cfg.Model, client), nil
+	return llm.NewOllama(logger, cfg, client), nil
 }
 
 func getConfigFromFlags(cmd *cli.Command) (*config.Config, error) {
@@ -247,7 +295,10 @@ func getConfigFromFlags(cmd *cli.Command) (*config.Config, error) {
 
 	queueSize := cmd.Uint("queue.size")
 	geminiConfig := getGeminiConfig(cmd)
-	ollamaConfig := getOllamaConfig(cmd)
+	ollamaConfig, err := getOllamaConfig(cmd)
+	if err != nil {
+		return nil, err
+	}
 	output, err := getOutputPath(cmd)
 	if err != nil {
 		return nil, err
@@ -294,17 +345,43 @@ func getGeminiConfig(cmd *cli.Command) *config.GeminiConfig {
 	return nil
 }
 
-func getOllamaConfig(cmd *cli.Command) *config.OllamaConfig {
+func getOllamaConfig(cmd *cli.Command) (*config.OllamaConfig, error) {
 	isSet := cmd.Bool("ollama")
 	if isSet {
-		return &config.OllamaConfig{
-			Host:    cmd.String("ollama.host"),
-			Port:    cmd.Uint16("ollama.port"),
-			Model:   cmd.String("ollama.model"),
-			Timeout: cmd.Duration("ollama.timeout"),
+		modelFlag := cmd.String("ollama.model")
+		thinkingModelFlag := cmd.String("ollama.model.thinking")
+		visionModelFlag := cmd.String("ollama.model.vision")
+
+		// Firstful set modelFlag to different models because considered 'modelFlag' has model name for thinking and vision features
+		thinkingModel := modelFlag
+		visionModel := modelFlag
+
+		if isModelSet(thinkingModelFlag) {
+			thinkingModel = thinkingModelFlag
 		}
+
+		if isModelSet(visionModelFlag) {
+			visionModel = visionModelFlag
+		}
+		// If specific models are set, put it. After set specific model names need check volumes for empties str
+		// because modelFlag might be empty. But this checking could not be before binding specific model names
+		if !isModelSet(thinkingModel) && !isModelSet(visionModel) {
+			return nil, errors.New("llm model doesn't choosen for ollama server")
+		}
+
+		return &config.OllamaConfig{
+			Host:          cmd.String("ollama.host"),
+			Port:          cmd.Uint16("ollama.port"),
+			ThinkingModel: thinkingModel,
+			VisionModel:   visionModel,
+			Timeout:       cmd.Duration("ollama.timeout"),
+		}, nil
 	}
-	return nil
+	return nil, nil
+}
+
+func isModelSet(modelName string) bool {
+	return modelName != ""
 }
 
 func isPathToFile(path string) (bool, error) {

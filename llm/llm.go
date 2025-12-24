@@ -12,12 +12,12 @@ import (
 
 const (
 	systemInstructionForCardContent = `
-I send you word or phrase or idiom, you should generate paraphrase, example of using and synonyms for this subject.
-In examples you must highlighted in bold subject with html tag like: <b>{subject}</b>, 
+I send you word or phrase or idiom, you should generate paraphrase, example of using and synonyms for this subject and UK transcription.
+In examples you must highlighted in bold subject with html tag like: <b>{subject}</b>.
 If this subject changed structure (irregular word or word ending) this also have to be highlighted, for example: apple -> <b>apples</b>
 Maximum count of generated examples and synonyms have to be 5.
 Minimum count of generated examples and synonyms have to be 3.
-Paraphrase mustn't has this word, phrase, idiom. 
+Paraphrase mustn't has this word, phrase, idiom.
 Result have to be concise, structured for easy reading.
 
 EXAMPLE INPUT:
@@ -32,6 +32,7 @@ EXAMPLE JSON OUTPUT
 		"Delete the last <b>row</b> in the table to remove outdated information.",
 		"To view all details, scroll down through the successive <b>rows</b> of the report."
 	],
+	"transcription": "/rəʊ/",
 	"synonyms": [
 		"line",
 		"tier",
@@ -48,8 +49,8 @@ You should give me rating between 1 - 10, where 10 its best match.`
 )
 
 var (
-	errRequestLimitReached = errors.New("request limit reached")
-	errServerIsOverload    = errors.New("server is overload")
+	ErrRequestLimitReached = errors.New("request limit reached")
+	ErrServerIsOverload    = errors.New("server is overload")
 )
 
 type GeneratedCardContent struct {

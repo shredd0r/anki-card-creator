@@ -71,28 +71,37 @@ You can use configuration yaml file or transmit volumes by run parameters
 * ***ollama.host*** - (type: ***string***) ***default: 127.0.0.1***, host to your ollama server;
 * ***ollama.port*** - (type: ***uint***) ***default: 11434***, port to your ollama server;
 * ***ollama.model*** - (type: ***string***) model name started on your ollama server, which will be used for generate volumes;
+* ***ollama.model.thinking*** - (type ***string***) if you want using different model for generate text, put model name to this flag;
+* ***ollama.model.vision*** - (type ***string***) if you want using different model for rate picture, put model name to this flag;
 * ***ollama.timeout*** - (type: ***Duration*** timeout duration for wating response from server); 
 * ***picture.min-rating*** - (type: ***uint***) ***default: 7*** can be between 1 - 10, minimal rating for accept picture for flashcard;
 * ***picture.count-searches*** - (type: ***uint***) ***default: 3*** count of searches and rate images for flashcard;
 * ***picture.ignore*** - ***default: false*** skip selection picture if during searing and rate gets error;
-* ***config-file*** - path to config file with parameters;  
+* ***config-file*** - path to config file with parameters;
 
+## Commands
+The creator has command for testing connections to AI server
 Example run:<br>
+```bash
+anki-card-creator test-conn --ollama --ollama.model gemma3 --only-ai
+```
+
+Command for generate flashcards from json input:<br>
 ```bash 
-    anki-card-creator word.json --batch.size 5 --gemini --gemini.token Jdjgo803JChpqqzjadpqet0892jvqywnzJPpqyn --picture.ignore
+anki-card-creator gen word.json --batch.size 5 --gemini --gemini.token Jdjgo803JChpqqzjadpqet0892jvqywnzJPpqyn --picture.ignore
     
-    // or
+// or
     
-    anki-card-creator word.json --ollama --ollama.port 8080 --ollama.model gemma --only-ai
+anki-card-creator gen word.json --ollama --ollama.port 8080 --ollama.model gemma --only-ai
 
-    // or
+// or
 
-    anki-card-creator ./subject --config-file path-to-config.yaml
+anki-card-creator gen word.json --ollama --ollama.model.thinking deepseek-r1:14b --ollama.model.vision gemma3 --only-ai
+    
+// or
+
+anki-card-creator gen ./subject --config-file path-to-config.yaml
 ```
 
 # TODO
-* add handling for gemini overload error
-* add building command in Makefile
-* handling critical (stop processing) / non-critical error
 * add commands for testing connection, test generation
-* add supporting another browsers

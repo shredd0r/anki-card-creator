@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/prathyushnallamothu/ollamago"
+	"github.com/shredd0r/anki-card-creator/config"
 	"github.com/shredd0r/anki-card-creator/models"
 	"golang.org/x/sync/errgroup"
 )
@@ -42,26 +43,26 @@ const (
 				"analysis": { "type": "string" }
 			}
 		}`
-	thinking = "deepseek-r1:14b"
-	vision   = "gemma3"
 )
 
 var (
-	errGenerationIsNotDone = errors.New("generation isn`t done")
-	errModelNotFound       = errors.New("model not found")
+	ErrGenerationIsNotDone = errors.New("generation isn`t done")
+	ErrModelNotFound       = errors.New("model not found")
 )
 
 type ollama struct {
-	model  string
-	logger *slog.Logger
-	client *ollamago.Client
+	thinkingModel string
+	visionModel   string
+	logger        *slog.Logger
+	client        *ollamago.Client
 }
 
-func NewOllama(logger *slog.Logger, model string, client *ollamago.Client) Provider {
+func NewOllama(logger *slog.Logger, cfg config.OllamaConfig, client *ollamago.Client) Provider {
 	return &ollama{
-		model:  model,
-		logger: logger.WithGroup("ollama-provider"),
-		client: client,
+		thinkingModel: cfg.ThinkingModel,
+		visionModel:   cfg.VisionModel,
+		logger:        logger.WithGroup("ollama-provider"),
+		client:        client,
 	}
 }
 
@@ -69,7 +70,7 @@ func (p *ollama) GenerateCardContent(ctx context.Context, subject string, usingC
 	p.logger.Debug("start generate card content", slog.Any("subject", subject))
 
 	resp, err := p.client.Generate(ctx, ollamago.GenerateRequest{
-		Model:  thinking,
+		Model:  p.thinkingModel,
 		Prompt: getPromptRequestBy(subject, usingContext),
 		Stream: false,
 		System: systemInstructionForCardContent,
@@ -93,7 +94,7 @@ func (p *ollama) GenerateCardContent(ctx context.Context, subject string, usingC
 func (p *ollama) RatePicture(ctx context.Context, subject string, picture *models.File) (*uint8, error) {
 	p.logger.Debug("start rate picture", slog.Any("subject", subject))
 	resp, err := p.client.Generate(ctx, ollamago.GenerateRequest{
-		Model:  vision,
+		Model:  p.visionModel,
 		Prompt: getPromptRequestBy(subject, nil),
 		Stream: false,
 		System: systemInstructionForRatePicture,
@@ -123,13 +124,17 @@ func (p *ollama) HealthCheck(ctx context.Context) error {
 	p.logger.Debug("start healthcheck on ollama server")
 	errwg, childCtx := errgroup.WithContext(ctx)
 
+	if p.isModelsEqual() {
+		return p.healthCheck(ctx, p.thinkingModel, p.thinkingModel)
+	}
+
 	errwg.Go(
 		func() error {
-			return p.healthCheck(childCtx, thinking, "thinking")
+			return p.healthCheck(childCtx, p.thinkingModel, "thinking")
 		})
 	errwg.Go(
 		func() error {
-			return p.healthCheck(childCtx, vision, "vision")
+			return p.healthCheck(childCtx, p.visionModel, "vision")
 
 		})
 	return errwg.Wait()
@@ -144,7 +149,6 @@ func (p *ollama) healthCheck(ctx context.Context, modelName string, modelType st
 	})
 
 	if p.handleOllamaError(resp, err) != nil {
-		p.logger.Error("received error from ollama server", slog.Any("model type", modelType))
 		return err
 	}
 
@@ -152,9 +156,14 @@ func (p *ollama) healthCheck(ctx context.Context, modelName string, modelType st
 	return nil
 }
 
+func (p *ollama) isModelsEqual() bool {
+	return p.thinkingModel == p.visionModel
+}
+
 func (p *ollama) handleOllamaError(resp *ollamago.GenerateResponse, err error) error {
 	if err != nil {
 		p.logger.Error("received error from ollama server")
+		p.logger.Debug("received erro from ollama server", slog.Any("err", err.Error()))
 
 		if errors.Is(err, syscall.ECONNREFUSED) {
 			return err
@@ -175,12 +184,12 @@ func (p *ollama) handleOllamaError(resp *ollamago.GenerateResponse, err error) e
 		case http.StatusTooManyRequests:
 			{
 				p.logger.Error("too many generation requests to ollama client")
-				return errRequestLimitReached
+				return ErrRequestLimitReached
 			}
 		case http.StatusNotFound:
 			{
 				p.logger.Error("model not found")
-				return errModelNotFound
+				return ErrModelNotFound
 			}
 		}
 
@@ -189,7 +198,7 @@ func (p *ollama) handleOllamaError(resp *ollamago.GenerateResponse, err error) e
 
 	if !resp.Done {
 		p.logger.Error("generation isn't done yet")
-		return errGenerationIsNotDone
+		return ErrGenerationIsNotDone
 	}
 
 	return nil

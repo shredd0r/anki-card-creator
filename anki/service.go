@@ -11,12 +11,16 @@ import (
 	"strings"
 
 	"github.com/npcnixel/genanki-go"
+	"github.com/shredd0r/anki-card-creator/internal/version"
 	"github.com/shredd0r/anki-card-creator/models"
+)
+
+var (
+	model_name = fmt.Sprintf("card-generator-%s", version.Version)
 )
 
 const (
 	model_id      = 10011001
-	model_name    = "card-generator-v1.0.0"
 	template_name = "card-generator-template"
 	default_tag   = "anki-card-creator"
 )
@@ -40,7 +44,7 @@ func NewService(logger *slog.Logger) Service {
 
 // AddFlashcard - method for putting down flashcard in appropriate deck by deckname in flashcard
 func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashcard) {
-	s.logger.Debug("start adding flashcard to deck", slog.Any("deck", flashcard.DeckName), slog.Any("subject", flashcard.Subject))
+	s.logger.Info("start adding flashcard to deck", slog.Any("deck", flashcard.DeckName), slog.Any("subject", flashcard.Subject))
 
 	deck, ok := s.decks[flashcard.DeckName]
 	if !ok {

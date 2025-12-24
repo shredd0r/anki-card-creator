@@ -22,10 +22,11 @@ type GeminiConfig struct {
 }
 
 type OllamaConfig struct {
-	Host    string        `yaml:"host"`
-	Port    uint16        `yaml:"port"`
-	Model   string        `yaml:"model"`
-	Timeout time.Duration `yaml:"timeout"`
+	Host          string        `yaml:"host"`
+	Port          uint16        `yaml:"port"`
+	ThinkingModel string        `yaml:"thinking-model"`
+	VisionModel   string        `yaml:"vision-model"`
+	Timeout       time.Duration `yaml:"timeout"`
 }
 
 type PictureConfig struct {

@@ -19,7 +19,7 @@ var errNotSupportedMIMEType = errors.New("unsupported MIME type")
 
 const (
 	model_for_generate_text = "gemini-2.5-flash" //free model
-	rpm                     = 10                 //request per minute
+	rpm                     = 5                  //request per minute
 )
 
 func NewGemini(logger *slog.Logger, client *genai.Client) Provider {
@@ -83,7 +83,7 @@ func (p *implGemini) GenerateCardContent(ctx context.Context, subject string, us
 	)
 
 	if err != nil {
-		p.logger.Error(fmt.Sprintf("failed generate content for subject: %s", subject), slog.Any("err", err.Error()))
+		p.logger.Error(fmt.Sprintf("failed generate content for subject: %s", subject))
 		return nil, p.wrapError(err)
 	}
 
@@ -171,11 +171,11 @@ func (p *implGemini) wrapError(err error) error {
 	switch apiErr.Code {
 	case http.StatusServiceUnavailable:
 		{
-			return errServerIsOverload
+			return ErrServerIsOverload
 		}
 	case http.StatusTooManyRequests:
 		{
-			return errServerIsOverload
+			return ErrRequestLimitReached
 		}
 	default:
 		return err

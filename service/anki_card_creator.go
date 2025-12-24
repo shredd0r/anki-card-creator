@@ -43,9 +43,6 @@ func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService anki
 	}
 }
 
-// TODO maybe need split errors to two category:
-// - critical - when this error returns, workflow will stop
-// - noncritical - when this error returns, workflow continue, add not stored target for some pull and return aka "not generated"
 func (c *AnkiCardCreator) Create(ctx context.Context, targets *[]extractor.TargetInfo) error {
 	c.logger.Info("start creating flashcard and store it in anki")
 
@@ -80,6 +77,10 @@ func (c *AnkiCardCreator) createAllFlashcards(ctxWithCancel context.Context, can
 	wg := sync.WaitGroup{}
 	defer cancel()
 
+	indexSubject := 0
+	count := c.getCountOfSubject(targets)
+	c.logger.Info(fmt.Sprintf("Detected %d subjects", count))
+
 	for _, target := range *targets {
 		for _, subject := range target.Subjects {
 			wg.Add(1)
@@ -90,7 +91,9 @@ func (c *AnkiCardCreator) createAllFlashcards(ctxWithCancel context.Context, can
 					<-chanQueue
 				}()
 				chanQueue <- struct{}{}
-				c.logger.Info("start creating flashcard", slog.Any("subject", subject))
+
+				indexSubject++
+				c.logger.Info(fmt.Sprintf("start creating flashcard %s, current subject : %d, count of subjects: %d", subject, indexSubject, count))
 
 				flashcard, err := c.cardCreator.Create(ctxWithCancel, target.DeckName, subject, target.Tags)
 				if err != nil {
@@ -129,11 +132,14 @@ func (c *AnkiCardCreator) addFlashcardToPackage(ctxWithCancel context.Context, c
 	}
 }
 
-func (c *AnkiCardCreator) generateAPKGFileName() string {
-	return fmt.Sprintf("generated-flashcards-%d.apkg", time.Now().UnixMilli())
+func (c *AnkiCardCreator) getCountOfSubject(targets *[]extractor.TargetInfo) int {
+	count := 0
+	for _, target := range *targets {
+		count += len(target.Subjects)
+	}
+	return count
 }
 
-func (c *AnkiCardCreator) isCriticalError(err error) bool {
-
-	return false
+func (c *AnkiCardCreator) generateAPKGFileName() string {
+	return fmt.Sprintf("generated-flashcards-%d.apkg", time.Now().UnixMilli())
 }
