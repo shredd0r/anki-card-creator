@@ -11,9 +11,7 @@ type Config struct {
 	Debugging bool          `yaml:"debugging"`
 	QueueSize uint          `yaml:"queue-size"`
 	Output    string        `yaml:"output"`
-	OnlyAI    bool          `yaml:"only-ai"`
-	Gemini    *GeminiConfig `yaml:"gemini"`
-	Ollama    *OllamaConfig `yaml:"ollama"`
+	LLM       *LLMConfig    `yaml:"llm"`
 	Picture   PictureConfig `yaml:"picture"`
 }
 
@@ -21,16 +19,15 @@ type GeminiConfig struct {
 	Token string `yaml:"token"`
 }
 
-type OllamaConfig struct {
-	Host          string        `yaml:"host"`
-	Port          uint16        `yaml:"port"`
-	ThinkingModel string        `yaml:"thinking-model"`
-	VisionModel   string        `yaml:"vision-model"`
-	Timeout       time.Duration `yaml:"timeout"`
+type LLMConfig struct {
+	Seed    int64         `yaml:"seed"`     // Seed for generating content
+	BaseUrl string        `yaml:"base-url"` // Url to server with launched model based on OpenAI APIes
+	Token   string        `yaml:"token"`    // Token for llm provider
+	Model   string        `yaml:"model"`    // Model name
+	Timeout time.Duration `yaml:"timeout"`  // Timeout for response from llm server
 }
 
 type PictureConfig struct {
-	IgnoreError   bool  `yaml:"ignore"`
 	CountSearches uint8 `yaml:"count-searches"`
 	MinimalRating uint8 `yaml:"min-rating"`
 }

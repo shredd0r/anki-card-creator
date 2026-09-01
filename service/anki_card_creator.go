@@ -93,7 +93,7 @@ func (c *AnkiCardCreator) createAllFlashcards(ctxWithCancel context.Context, can
 				chanQueue <- struct{}{}
 
 				indexSubject++
-				c.logger.Info(fmt.Sprintf("start creating flashcard %s, current subject : %d, count of subjects: %d", subject, indexSubject, count))
+				c.logger.Info(fmt.Sprintf("start creating flashcard %s, current subject: %d, count of subjects: %d", subject, indexSubject, count))
 
 				flashcard, err := c.cardCreator.Create(ctxWithCancel, target.DeckName, subject, target.Tags)
 				if err != nil {
@@ -141,5 +141,5 @@ func (c *AnkiCardCreator) getCountOfSubject(targets *[]extractor.TargetInfo) int
 }
 
 func (c *AnkiCardCreator) generateAPKGFileName() string {
-	return fmt.Sprintf("generated-flashcards-%d.apkg", time.Now().UnixMilli())
+	return fmt.Sprintf("generated-flashcards-%s.apkg", time.Now().Format("2006-01-02-15:04:05"))
 }

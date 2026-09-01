@@ -8,13 +8,14 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/playwright-community/playwright-go"
+	"github.com/mxschmitt/playwright-go"
 	"github.com/shredd0r/anki-card-creator/downloader"
 	"github.com/shredd0r/anki-card-creator/models"
 )
 
 const (
 	main_page                                     = "https://www.google.com/imghp?hl=en"
+	image_search_url                              = "https://www.google.com/search?q=%s&udm=2"
 	selector_for_matched_image                    = "img[style*='object-position']"
 	selector_for_detail_view_image                = "a[role='link'] > img[jsaction]:first-child"
 	selector_for_detail_view_image_for_some_cases = "a[role='link'] > img[jsname]:first-child"

@@ -12,7 +12,6 @@ import (
 
 type factoryPositiveCase struct {
 	Name         string
-	OnlyAI       bool
 	SubjectType  models.SubjectType
 	ExpectedType string
 }
@@ -20,16 +19,9 @@ type factoryPositiveCase struct {
 func TestPositiveTests(t *testing.T) {
 	testcases := []factoryPositiveCase{
 		{
-			Name:         "get field fetcher for word by cambridge dictionary",
-			OnlyAI:       false,
+			Name:         "get field fetcher for word",
 			SubjectType:  models.SubjectTypeWord,
-			ExpectedType: "*fetcher.wordCardContentByCambridge",
-		},
-		{
-			Name:         "get field fetcher for word by llm",
-			OnlyAI:       true,
-			SubjectType:  models.SubjectTypeWord,
-			ExpectedType: "*fetcher.wordCardContentByAI",
+			ExpectedType: "*fetcher.wordCardContent",
 		},
 		{
 			Name:         "get field fetcher for phrase",
@@ -40,7 +32,7 @@ func TestPositiveTests(t *testing.T) {
 
 	logger := slog.Default()
 	for _, testcase := range testcases {
-		factory := NewCardContentFactory(config.Config{OnlyAI: testcase.OnlyAI}, logger, nil, nil)
+		factory := NewCardContentFactory(config.PictureConfig{}, logger, nil, nil, nil)
 
 		t.Run(testcase.Name, func(t *testing.T) {
 			fieldFetcher, err := factory.Get(testcase.SubjectType)
@@ -53,7 +45,7 @@ func TestPositiveTests(t *testing.T) {
 
 func TestUnsupportedSubjectType(t *testing.T) {
 	logger := slog.Default()
-	factory := NewCardContentFactory(config.Config{}, logger, nil, nil)
+	factory := NewCardContentFactory(config.PictureConfig{}, logger, nil, nil, nil)
 
 	fieldFetcher, err := factory.Get(models.SubjectTypeNone)
 	assert.Nil(t, fieldFetcher)

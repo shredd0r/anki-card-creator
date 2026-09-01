@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/playwright-community/playwright-go"
+	"github.com/mxschmitt/playwright-go"
 	"github.com/shredd0r/anki-card-creator/downloader"
 	"github.com/shredd0r/anki-card-creator/models"
 	"github.com/shredd0r/anki-card-creator/utils"

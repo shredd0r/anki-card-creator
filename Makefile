@@ -2,6 +2,9 @@ VERSION=v1.0.0
 LDFLAGS=-X 'github.com/shredd0r/anki-card-creator/internal/version'
 
 
+install:
+	
+
 build-windows:
 	GOOS=windows GOARCH=amd64 go build -ldflags='${LDFLAGS}.Version=${VERSION}' -o anki-card-creator.exe
 	

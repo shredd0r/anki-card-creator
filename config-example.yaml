@@ -1,14 +1,14 @@
-debuggin: false
-queue-size: 15
+debuggin: true
+queue-size: 2
 output: ./output
-gemini:
-  token: Jdjgo803JChpqqzjadpqet0892jvqywnzJPpqyn
-ollama:
-  host: 127.0.0.1
-  port: 8080
-  model: gemma
-  timeout: 1m
+llm: 
+  only-ai: true
+  seed: 1572738495
+  base-url: http://localhost:1234/v1
+  token: lm-studio
+  model: google/gemma-4-12b-qat
+  timeout: 2m
 picture:
   min-rating: 5
-  count-searches: 2
+  count-searches: 0
   ignore: false

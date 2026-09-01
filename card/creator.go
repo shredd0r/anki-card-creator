@@ -6,9 +6,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 
+	htgotts "github.com/hegedustibor/htgo-tts"
+	"github.com/hegedustibor/htgo-tts/voices"
 	"github.com/shredd0r/anki-card-creator/card/fetcher"
 	"github.com/shredd0r/anki-card-creator/config"
 	"github.com/shredd0r/anki-card-creator/google"
@@ -24,6 +25,7 @@ type Creator interface {
 type implCreator struct {
 	pictureCfg          config.PictureConfig
 	logger              *slog.Logger
+	speech              *htgotts.Speech
 	llmProvider         llm.Provider
 	googleImageProvider google.Image
 	cardContentFactory  fetcher.CardContentFactory
@@ -36,6 +38,7 @@ func NewFlashcardCreator(pictureCfg config.PictureConfig, logger *slog.Logger,
 	return &implCreator{
 		pictureCfg:          pictureCfg,
 		logger:              logger.WithGroup("flashcard-creator"),
+		speech:              &htgotts.Speech{Language: voices.EnglishUK},
 		googleImageProvider: googleImageProvider,
 		llmProvider:         llmProvider,
 		cardContentFactory:  cardContentFactory,
@@ -53,9 +56,8 @@ func (c *implCreator) Create(ctx context.Context, deck string, subject string, u
 }
 
 type fetchTask struct {
-	fieldName     string
-	callMethod    func(ctx context.Context, subject string, usingContext *[]string) error
-	ignoreTaskErr bool
+	fieldName  string
+	callMethod func(ctx context.Context, subject string, usingContext *[]string) error
 }
 
 func (c *implCreator) create(ctx context.Context, cardContentFetcher fetcher.CardContent, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
@@ -67,6 +69,7 @@ func (c *implCreator) create(ctx context.Context, cardContentFetcher fetcher.Car
 	subjectType := cardContentFetcher.GetSubjectType()
 	var cardContent *models.CardContent
 	var picture *models.File
+	var pronunciation *models.File
 	chanForErr := make(chan error, 1)
 
 	fetchTasks := []fetchTask{
@@ -81,11 +84,18 @@ func (c *implCreator) create(ctx context.Context, cardContentFetcher fetcher.Car
 		{
 			fieldName: "picture",
 			callMethod: func(ctx context.Context, subject string, usingContext *[]string) error {
-				respPicture, err := c.getPicture(ctx, subject, usingContext, subjectType)
+				respPicture, err := cardContentFetcher.GetPicture(ctx, subject, usingContext)
 				picture = respPicture
 				return err
 			},
-			ignoreTaskErr: c.pictureCfg.IgnoreError,
+		},
+		{
+			fieldName: "pronunciation",
+			callMethod: func(ctx context.Context, subject string, usingContext *[]string) error {
+				respPronunciation, err := cardContentFetcher.GetPronunciation(subject)
+				pronunciation = respPronunciation
+				return err
+			},
 		},
 	}
 
@@ -96,16 +106,10 @@ func (c *implCreator) create(ctx context.Context, cardContentFetcher fetcher.Car
 			err := fetchTask.callMethod(ctxForCreate, subject, usingContext)
 			if err != nil {
 				c.logger.Debug(fmt.Sprintf("received error after get %s", fetchTask.fieldName))
-				// First check ignoring error
-				if fetchTask.ignoreTaskErr {
-					c.logger.Debug("received error need ignore, skip it")
-				} else {
-					// After that, if in channel for error empty, put error to channel, because needed only first error
-					if len(chanForErr) == 0 {
-						c.logger.Debug("cancel context, put err to chan", slog.Any("err", err.Error()))
-						cancel()
-						chanForErr <- err
-					}
+				if len(chanForErr) == 0 {
+					c.logger.Debug("cancel context, put err to chan", slog.Any("err", err.Error()))
+					cancel()
+					chanForErr <- err
 				}
 			}
 		}()
@@ -123,61 +127,20 @@ func (c *implCreator) create(ctx context.Context, cardContentFetcher fetcher.Car
 		tags = append(tags, *usingContext...)
 	}
 
+	if cardContent.Pronunciation != nil {
+		pronunciation = cardContent.Pronunciation
+	}
+
 	return &models.Flashcard{
 		Subject:       subject,
 		SubjectType:   subjectType,
 		DeckName:      deck,
 		Transcription: cardContent.Transcription,
-		Pronunciation: cardContent.Pronunciation,
+		Pronunciation: pronunciation,
 		Synonyms:      cardContent.Synonyms,
 		Picture:       picture,
 		Paraphrase:    cardContent.Paraphrase,
 		Examples:      cardContent.Examples,
 		Tags:          tags,
 	}, nil
-}
-
-// Method for rating pictures gotten from google image
-// If all attempts images don't match, creating card continue without picture
-func (c *implCreator) getPicture(ctx context.Context, subject string, usingContext *[]string, subjectType models.SubjectType) (*models.File, error) {
-	if subjectType == models.SubjectTypePhrase {
-		c.logger.Debug("picture for phrase is not searching, skip", slog.Any("subject", subject))
-		return nil, nil
-	}
-
-	var query string
-	if usingContext == nil {
-		query = subject
-	} else {
-		query = fmt.Sprintf("%s %s", subject, strings.Join(*usingContext, ", "))
-	}
-
-	queryPageProvider, err := c.googleImageProvider.Request(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-
-	for attempt := range c.pictureCfg.CountSearches {
-		c.logger.Debug(fmt.Sprintf("attempt: %d for getting picture for subject: %s", attempt, subject))
-
-		picture, err := queryPageProvider.Get(ctx, subject, uint(attempt))
-		if err != nil {
-			c.logger.Error("failed get picture for subject", slog.Any("subject", subject), slog.Any("attempt", attempt))
-			return nil, err
-		}
-
-		rating, err := c.llmProvider.RatePicture(ctx, subject, picture)
-		if err != nil {
-			c.logger.Error("failed rating picture for subject", slog.Any("subject", subject), slog.Any("attempt", attempt))
-			return nil, err
-		}
-
-		if *rating >= c.pictureCfg.MinimalRating {
-			c.logger.Debug(fmt.Sprintf("found suitable picture for subject: %s", subject))
-			return picture, nil
-		}
-	}
-
-	c.logger.Warn(fmt.Sprintf("picture for subject: %s not found, continue without picture", subject))
-	return nil, nil
 }

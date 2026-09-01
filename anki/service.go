@@ -26,7 +26,9 @@ const (
 )
 
 type Service interface {
+	// AddFlashcard - method for putting down flashcard in appropriate deck by deckname in flashcard
 	AddFlashcard(ctx context.Context, flashcard *models.Flashcard)
+	// SavePackage - create the package with all decks from service and save it to file
 	SavePackage(ctx context.Context, pathToFile string) error
 }
 
@@ -48,7 +50,8 @@ func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashc
 
 	deck, ok := s.decks[flashcard.DeckName]
 	if !ok {
-		deck = genanki.NewDeck(s.getIdByString(flashcard.DeckName), flashcard.DeckName, "")
+		s.logger.Debug("Deckname not exist in cache, create", slog.Any("deckname", flashcard.DeckName))
+		deck = genanki.NewDeck(s.getIdByString(flashcard.DeckName), flashcard.DeckName, "Deck created by anki card creator")
 		s.decks[flashcard.DeckName] = deck
 	}
 

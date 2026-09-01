@@ -5,3 +5,5 @@
 *.apkg
 config.yaml
 anki-card-creator
+word.json
+phrase.json

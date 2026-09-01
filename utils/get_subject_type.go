@@ -7,7 +7,7 @@ import (
 )
 
 func GetSubjectType(subject string) models.SubjectType {
-	if strings.Contains(subject, " ") {
+	if strings.Contains(subject, " ") || strings.Contains(subject, "-") {
 		return models.SubjectTypePhrase
 	}
 	return models.SubjectTypeWord

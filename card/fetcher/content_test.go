@@ -3,11 +3,15 @@ package fetcher
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 
+	"github.com/shredd0r/anki-card-creator/config"
 	"github.com/shredd0r/anki-card-creator/extractor"
 	mock_extractor "github.com/shredd0r/anki-card-creator/extractor/mock"
+	"github.com/shredd0r/anki-card-creator/google"
+	mock_google "github.com/shredd0r/anki-card-creator/google/mock"
 	"github.com/shredd0r/anki-card-creator/llm"
 	mock_llm "github.com/shredd0r/anki-card-creator/llm/mock"
 	"github.com/shredd0r/anki-card-creator/models"
@@ -15,20 +19,23 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+type googleImageProviderExpectedCalls func(cfg config.PictureConfig, subject string, usingContext *[]string, gipmp *mock_google.MockImage)
 type cambridgeExtractorExpectedCalls func(subject string, expectedCardContent *models.CardContent, ce *mock_extractor.MockCambridge)
-type llmProviderExpectedCalls func(subject string, usingContext *[]string, expectedCardContent *models.CardContent, gp *mock_llm.MockProvider)
-type methodForInitCardContentFetcher func(*slog.Logger, extractor.Cambridge, llm.Provider) CardContent
+type llmProviderExpectedCalls func(cfg config.PictureConfig, subject string, usingContext *[]string, expectedCardContent *models.CardContent, gp *mock_llm.MockProvider)
+type methodForInitCardContentFetcher func(config.PictureConfig, *slog.Logger, google.Image, extractor.Cambridge, llm.Provider) CardContent
 
 type fieldFetcherPositiveCase struct {
-	Name                            string
-	Subject                         string
-	ExpectedSubjectType             models.SubjectType
-	ExpectedCardContent             models.CardContent
-	InitCardContentFetcherForTest   methodForInitCardContentFetcher
-	CambridgeExtractorExpectedCalls cambridgeExtractorExpectedCalls
-	LLMProviderExpectedCalls        llmProviderExpectedCalls
+	Name                             string
+	Subject                          string
+	ExpectedSubjectType              models.SubjectType
+	ExpectedCardContent              models.CardContent
+	InitCardContentFetcherForTest    methodForInitCardContentFetcher
+	GoogleImageProviderExpectedCalls googleImageProviderExpectedCalls
+	CambridgeExtractorExpectedCalls  cambridgeExtractorExpectedCalls
+	LLMProviderExpectedCalls         llmProviderExpectedCalls
 }
 
+// Add tests for checking rate picture
 func TestPostiveCases(t *testing.T) {
 	slog.SetLogLoggerLevel(slog.LevelDebug)
 	logger := slog.Default()
@@ -37,7 +44,7 @@ func TestPostiveCases(t *testing.T) {
 	transcriptionForWord := "word-transcription"
 	testcases := []fieldFetcherPositiveCase{
 		{
-			Name:                "field fetcher for word by cambridge",
+			Name:                "field fetcher for word",
 			Subject:             "subject-word",
 			ExpectedSubjectType: models.SubjectTypeWord,
 			ExpectedCardContent: models.CardContent{
@@ -47,24 +54,10 @@ func TestPostiveCases(t *testing.T) {
 				Examples:      []string{"word-example-1", "word-example-2"},
 				Synonyms:      []string{"word-synonym-1", "word-synonym-2"},
 			},
-			InitCardContentFetcherForTest:   initCardContentFetcherForWordByCambridge,
-			CambridgeExtractorExpectedCalls: cambridgeExtractorExpectedCallsForReturnVolumes,
-			LLMProviderExpectedCalls:        llmProviderExpectedCallsGenerateCardContent,
-		},
-		{
-			Name:                "field fetcher for word by AI",
-			Subject:             "subject-word",
-			ExpectedSubjectType: models.SubjectTypeWord,
-			ExpectedCardContent: models.CardContent{
-				Paraphrase:    "word-paraphrase",
-				Transcription: &transcriptionForWord,
-				Pronunciation: &models.File{Content: []byte("word-content")},
-				Examples:      []string{"word-example-1", "word-example-2"},
-				Synonyms:      []string{"word-synonym-1", "word-synonym-2"},
-			},
-			InitCardContentFetcherForTest:   initCardContentFetcherForWordByAI,
-			CambridgeExtractorExpectedCalls: cambridgeExtractorExpectedCallOnlyGetPronunciation,
-			LLMProviderExpectedCalls:        llmProviderExpectedCallsGenerateCardContent,
+			InitCardContentFetcherForTest:    initCardContentFetcherForWord,
+			GoogleImageProviderExpectedCalls: googleImageProviderExpectedAllCalls,
+			CambridgeExtractorExpectedCalls:  cambridgeExtractorExpectedCallsForReturnVolumes,
+			LLMProviderExpectedCalls:         llmProviderExpectedCallsGenerateCardContent,
 		},
 		{
 			Name:                "field component fetcher for word, where cambridge extractor didnt return examples",
@@ -77,7 +70,7 @@ func TestPostiveCases(t *testing.T) {
 				Examples:      []string{"word-example-1", "word-example-2"},
 				Synonyms:      []string{"word-synonym-1", "word-synonym-2"},
 			},
-			InitCardContentFetcherForTest:   initCardContentFetcherForWordByCambridge,
+			InitCardContentFetcherForTest:   initCardContentFetcherForWord,
 			CambridgeExtractorExpectedCalls: cambridgeExtractorExpectedCallsReturnVolumesExceptExamples,
 			LLMProviderExpectedCalls:        llmProviderExpectedCallsGenerateCardContent,
 		},
@@ -100,13 +93,18 @@ func TestPostiveCases(t *testing.T) {
 	usingContextForTest := &[]string{"some-context"}
 	for _, testcase := range testcases {
 		t.Run(testcase.Name, func(t *testing.T) {
+			cfg := config.PictureConfig{
+				CountSearches: 5,
+				MinimalRating: 5,
+			}
 			ce := mock_extractor.NewMockCambridge(ctrl)
-			gp := mock_llm.NewMockProvider(ctrl)
+			lp := mock_llm.NewMockProvider(ctrl)
+			gip := mock_google.NewMockImage(ctrl)
 
 			testcase.CambridgeExtractorExpectedCalls(testcase.Subject, &testcase.ExpectedCardContent, ce)
-			testcase.LLMProviderExpectedCalls(testcase.Subject, usingContextForTest, &testcase.ExpectedCardContent, gp)
+			testcase.LLMProviderExpectedCalls(cfg, testcase.Subject, usingContextForTest, &testcase.ExpectedCardContent, lp)
 
-			cardContentComponentFetcher := testcase.InitCardContentFetcherForTest(logger, ce, gp)
+			cardContentComponentFetcher := testcase.InitCardContentFetcherForTest(cfg, logger, gip, ce, lp)
 
 			actualCardContent, err := cardContentComponentFetcher.GetCardContent(t.Context(), testcase.Subject, usingContextForTest)
 			assert.Nil(t, err)
@@ -136,7 +134,7 @@ func TestNegativeCases(t *testing.T) {
 			Name:                            "field component fetcher for word, cambridge extractor return error",
 			SubjectType:                     models.SubjectTypeWord,
 			ExpectedMessageErr:              "error from cambridge card extractor",
-			InitCardContentFetcherForTest:   initCardContentFetcherForWordByCambridge,
+			InitCardContentFetcherForTest:   initCardContentFetcherForWord,
 			CambridgeExtractorExpectedCalls: cambridgeExtractorExpectedCallsEveryTimeReturnErr,
 			LLMProviderExpectedCalls:        llmProviderExpectedOneOrNoneCall,
 		},
@@ -144,7 +142,7 @@ func TestNegativeCases(t *testing.T) {
 			Name:                            "field component fetcher for word, llm provider return error",
 			SubjectType:                     models.SubjectTypeWord,
 			ExpectedMessageErr:              "error from llm provider",
-			InitCardContentFetcherForTest:   initCardContentFetcherForWordByAI,
+			InitCardContentFetcherForTest:   initCardContentFetcherForWord,
 			CambridgeExtractorExpectedCalls: cambridgeExtractorExpectOneOrNoneGetPronunciationCall,
 			LLMProviderExpectedCalls:        llmProviderExpectedCallsReturnErr,
 		},
@@ -161,13 +159,18 @@ func TestNegativeCases(t *testing.T) {
 	subjectForTests := "test-subject"
 	for _, testcase := range testcases {
 		t.Run(testcase.Name, func(t *testing.T) {
+			cfg := config.PictureConfig{
+				CountSearches: 5,
+				MinimalRating: 5,
+			}
 			ce := mock_extractor.NewMockCambridge(ctrl)
-			gp := mock_llm.NewMockProvider(ctrl)
+			lp := mock_llm.NewMockProvider(ctrl)
+			gip := mock_google.NewMockImage(ctrl)
 
 			testcase.CambridgeExtractorExpectedCalls(subjectForTests, nil, ce)
-			testcase.LLMProviderExpectedCalls(subjectForTests, nil, nil, gp)
+			testcase.LLMProviderExpectedCalls(cfg, subjectForTests, nil, nil, lp)
 
-			cardContentComponentFetcher := testcase.InitCardContentFetcherForTest(logger, ce, gp)
+			cardContentComponentFetcher := testcase.InitCardContentFetcherForTest(cfg, logger, gip, ce, lp)
 
 			actualCardContent, err := cardContentComponentFetcher.GetCardContent(t.Context(), subjectForTests, nil)
 			assert.Nil(t, actualCardContent)
@@ -176,15 +179,11 @@ func TestNegativeCases(t *testing.T) {
 	}
 }
 
-func initCardContentFetcherForWordByCambridge(logger *slog.Logger, ce extractor.Cambridge, llmp llm.Provider) CardContent {
-	return NewWordCardContentByCambridge(logger, llmp, ce)
+func initCardContentFetcherForWord(cfg config.PictureConfig, logger *slog.Logger, gip google.Image, ce extractor.Cambridge, llmp llm.Provider) CardContent {
+	return NewWordCardContent(cfg, logger, gip, llmp, ce)
 }
 
-func initCardContentFetcherForWordByAI(logger *slog.Logger, ce extractor.Cambridge, llmp llm.Provider) CardContent {
-	return NewWordCardContentByAI(logger, llmp, ce)
-}
-
-func initCardContentFetcherForPhrase(logger *slog.Logger, ce extractor.Cambridge, llmp llm.Provider) CardContent {
+func initCardContentFetcherForPhrase(cfg config.PictureConfig, logger *slog.Logger, gip google.Image, ce extractor.Cambridge, llmp llm.Provider) CardContent {
 	return NewPhraseCardContent(logger, llmp)
 }
 
@@ -242,7 +241,7 @@ func cambridgeExtractorExpectOneOrNoneGetPronunciationCall(subject string, expec
 		AnyTimes()
 }
 
-func llmProviderExpectedCallsGenerateCardContent(subject string, usingContext *[]string, expectedCardContent *models.CardContent, llmp *mock_llm.MockProvider) {
+func llmProviderExpectedCallsGenerateCardContent(cfg config.PictureConfig, subject string, usingContext *[]string, expectedCardContent *models.CardContent, llmp *mock_llm.MockProvider) {
 	llmp.
 		EXPECT().
 		GenerateCardContent(gomock.Any(), subject, usingContext).
@@ -253,9 +252,14 @@ func llmProviderExpectedCallsGenerateCardContent(subject string, usingContext *[
 			Examples:      expectedCardContent.Examples,
 			Synonyms:      expectedCardContent.Synonyms,
 		}, nil)
+
+	llmp.
+		EXPECT().
+		RatePicture(gomock.Any(), subject, gomock.Any()).
+		MaxTimes(int(cfg.CountSearches))
 }
 
-func llmProviderExpectedCallsReturnErr(subject string, usingContext *[]string, expectedCardContent *models.CardContent, llmp *mock_llm.MockProvider) {
+func llmProviderExpectedCallsReturnErr(cfg config.PictureConfig, subject string, usingContext *[]string, expectedCardContent *models.CardContent, llmp *mock_llm.MockProvider) {
 	llmp.
 		EXPECT().
 		GenerateCardContent(gomock.Any(), subject, usingContext).
@@ -263,9 +267,22 @@ func llmProviderExpectedCallsReturnErr(subject string, usingContext *[]string, e
 		Return(nil, errors.New("error from llm provider"))
 }
 
-func llmProviderExpectedOneOrNoneCall(subject string, usingContext *[]string, expectedCardContent *models.CardContent, llmp *mock_llm.MockProvider) {
+func llmProviderExpectedOneOrNoneCall(cfg config.PictureConfig, subject string, usingContext *[]string, expectedCardContent *models.CardContent, llmp *mock_llm.MockProvider) {
 	llmp.
 		EXPECT().
 		GenerateCardContent(gomock.Any(), subject, usingContext).
 		AnyTimes()
+
+	llmp.
+		EXPECT().
+		RatePicture(gomock.Any(), subject, gomock.Any()).
+		AnyTimes()
+}
+
+func googleImageProviderExpectedAllCalls(cfg config.PictureConfig, subject string, usingContext *[]string, gipmp *mock_google.MockImage) {
+	searchRequest := fmt.Sprintf("%s %s", subject, *usingContext)
+	gipmp.
+		EXPECT().
+		Request(gomock.Any(), searchRequest).
+		MaxTimes(int(cfg.CountSearches))
 }

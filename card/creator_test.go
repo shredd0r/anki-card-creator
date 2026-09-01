@@ -185,6 +185,11 @@ func TestNegativeCases(t *testing.T) {
 			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsWhereReturnErr,
 			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetPictureReturnErr,
 		},
+		{
+			Name:               "pronunciation generation method return err",
+			Subject:            "test-subject",
+			ExpectedErrMessage: "",
+		},
 	}
 
 	logger := slog.Default()
