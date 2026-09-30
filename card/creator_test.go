@@ -9,6 +9,7 @@ import (
 	mock_fetcher "github.com/shredd0r/anki-card-creator/card/fetcher/mock"
 	"github.com/shredd0r/anki-card-creator/config"
 	mock_duckduckgo "github.com/shredd0r/anki-card-creator/duckduckgo/mock"
+	"github.com/shredd0r/anki-card-creator/llm"
 	mock_llm "github.com/shredd0r/anki-card-creator/llm/mock"
 	"github.com/shredd0r/anki-card-creator/models"
 	"github.com/shredd0r/anki-card-creator/utils"
@@ -222,11 +223,15 @@ func TestNegativeCases(t *testing.T) {
 	}
 }
 
+// NOTE: implCreator.create() doesn't call llmProvider.RatePicture directly -
+// picture rating is delegated to (and mocked via) CardContent.GetPicture, so
+// these expectations are intentionally AnyTimes() rather than a fixed Times()
+// count.
 func llmProviderExpectedCallsForRatingPicture(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
 	llmp.EXPECT().
 		RatePicture(gomock.Any(), subject, gomock.Any()).
-		Times(1).
-		Return(&cfg.MinimalRating, nil)
+		AnyTimes().
+		Return(&llm.RatedPictureContent{Rating: cfg.MinimalRating}, nil)
 }
 
 func llmProviderWithoutExpectdCalls(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
@@ -237,15 +242,15 @@ func llmProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed(subject strin
 	llmp.
 		EXPECT().
 		RatePicture(gomock.Any(), subject, gomock.Any()).
-		Times(int(cfg.CountSearches)).
-		Return(&rating, nil)
+		AnyTimes().
+		Return(&llm.RatedPictureContent{Rating: rating}, nil)
 }
 
 func llmProviderExpectedCallsWhereReturnErr(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
 	llmp.
 		EXPECT().
 		RatePicture(gomock.Any(), subject, gomock.Any()).
-		Times(1).
+		AnyTimes().
 		Return(nil, errors.New("request limit reached"))
 }
 
