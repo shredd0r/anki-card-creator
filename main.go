@@ -29,7 +29,11 @@ func main() {
 		return
 	}
 
-	llmc := llm.NewOpenAIClient(logger, cfg.LLM)
+	// NOTE: real LLM client call kept below but commented out, in favor of
+	// the mock client, so the pipeline can be exercised end-to-end without a
+	// live LLM server running.
+	// llmc := llm.NewOpenAIClient(logger, cfg.LLM)
+	llmc := llm.NewMockClient(logger)
 	llmp := llm.NewProvider(llmc)
 	ccf := fetcher.NewCardContentFactory(cfg.Picture, logger, nil, nil, llmp)
 	cc := card.NewFlashcardCreator(cfg.Picture, logger, llmp, nil, ccf)
