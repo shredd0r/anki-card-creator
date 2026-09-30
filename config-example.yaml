@@ -1,7 +1,6 @@
 debuggin: true
 queue-size: 2
-output: ./output
-llm: 
+llm:
   only-ai: true
   seed: 1572738495
   base-url: http://localhost:1234/v1
@@ -12,3 +11,7 @@ picture:
   min-rating: 5
   count-searches: 0
   ignore: false
+anki-connect:
+  base-url: http://127.0.0.1:8765
+  token: ""
+  timeout: 30s

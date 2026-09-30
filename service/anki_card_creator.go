@@ -2,11 +2,9 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"path"
 	"sync"
-	"time"
+	"sync/atomic"
 
 	"github.com/shredd0r/anki-card-creator/anki"
 	"github.com/shredd0r/anki-card-creator/card"
@@ -21,7 +19,6 @@ const (
 
 type AnkiCardCreator struct {
 	queueSize   uint
-	outputPath  string
 	logger      *slog.Logger
 	ankiService anki.Service
 	cardCreator card.Creator
@@ -36,7 +33,6 @@ func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService anki
 
 	return &AnkiCardCreator{
 		queueSize:   queueSize,
-		outputPath:  cfg.Output,
 		logger:      logger.WithGroup("anki-card-creator"),
 		ankiService: ankiService,
 		cardCreator: cardCreator,
@@ -53,15 +49,15 @@ func (c *AnkiCardCreator) Create(ctx context.Context, targets *[]extractor.Targe
 	defer cancel()
 
 	go c.createAllFlashcards(ctxWithCancel, cancel, targets, chanFlashcard, chanErr)
-	go c.addFlashcardToPackage(ctxWithCancel, chanFlashcard, chanCompleteAddFlashcards)
+	go c.addFlashcardToPackage(ctxWithCancel, cancel, chanFlashcard, chanErr, chanCompleteAddFlashcards)
 
 	for {
 		select {
 		case <-ctxWithCancel.Done():
 		case <-chanCompleteAddFlashcards:
 			{
-				c.logger.Info("creating flashcards is done, start formating package")
-				return c.ankiService.SavePackage(ctx, path.Join(c.outputPath, c.generateAPKGFileName()))
+				c.logger.Info("creating flashcards is done")
+				return nil
 			}
 		case err := <-chanErr:
 			{
@@ -77,9 +73,9 @@ func (c *AnkiCardCreator) createAllFlashcards(ctxWithCancel context.Context, can
 	wg := sync.WaitGroup{}
 	defer cancel()
 
-	indexSubject := 0
+	var indexSubject atomic.Int64
 	count := c.getCountOfSubject(targets)
-	c.logger.Info(fmt.Sprintf("Detected %d subjects", count))
+	c.logger.Info("detected subjects", slog.Int("count", count))
 
 	for _, target := range *targets {
 		for _, subject := range target.Subjects {
@@ -92,23 +88,24 @@ func (c *AnkiCardCreator) createAllFlashcards(ctxWithCancel context.Context, can
 				}()
 				chanQueue <- struct{}{}
 
-				indexSubject++
-				c.logger.Info(fmt.Sprintf("start creating flashcard %s, current subject: %d, count of subjects: %d", subject, indexSubject, count))
+				current := indexSubject.Add(1)
+				c.logger.Info("start creating flashcard", slog.String("subject", subject), slog.Int64("current", current), slog.Int("total", count))
 
 				flashcard, err := c.cardCreator.Create(ctxWithCancel, target.DeckName, subject, target.Tags)
 				if err != nil {
+					c.logger.Error("failed to create flashcard", slog.String("subject", subject), slog.Any("err", err))
 					chanErr <- err
 				}
 				chanFlashcard <- flashcard
 
-				c.logger.Info("creating flashcard is done", slog.Any("subject", subject))
+				c.logger.Info("creating flashcard is done", slog.String("subject", subject))
 			}()
 		}
 	}
 	wg.Wait()
 }
 
-func (c *AnkiCardCreator) addFlashcardToPackage(ctxWithCancel context.Context, chanFlashcard chan *models.Flashcard, chanComplete chan struct{}) {
+func (c *AnkiCardCreator) addFlashcardToPackage(ctxWithCancel context.Context, cancel context.CancelFunc, chanFlashcard chan *models.Flashcard, chanErr chan error, chanComplete chan struct{}) {
 	for {
 		select {
 		case <-ctxWithCancel.Done():
@@ -121,7 +118,12 @@ func (c *AnkiCardCreator) addFlashcardToPackage(ctxWithCancel context.Context, c
 		case flashcard, ok := <-chanFlashcard:
 			{
 				if flashcard != nil {
-					c.ankiService.AddFlashcard(ctxWithCancel, flashcard)
+					if err := c.ankiService.AddFlashcard(ctxWithCancel, flashcard); err != nil {
+						c.logger.Error("failed to add flashcard via anki connect", slog.Any("err", err))
+						cancel()
+						chanErr <- err
+						return
+					}
 				}
 				if !ok {
 					c.logger.Debug("channel for flashcards already closed, stop goroutine 'addFlashcardToPackage'")
@@ -138,8 +140,4 @@ func (c *AnkiCardCreator) getCountOfSubject(targets *[]extractor.TargetInfo) int
 		count += len(target.Subjects)
 	}
 	return count
-}
-
-func (c *AnkiCardCreator) generateAPKGFileName() string {
-	return fmt.Sprintf("generated-flashcards-%s.apkg", time.Now().Format("2006-01-02-15:04:05"))
 }

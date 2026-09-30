@@ -23,7 +23,12 @@ func main() {
 		return
 	}
 
-	as := anki.NewService(logger)
+	as, err := anki.NewService(ctx, logger, cfg.AnkiConnect)
+	if err != nil {
+		logger.Error("failed to initialize anki connect service", slog.Any("err", err))
+		return
+	}
+
 	llmc := llm.NewOpenAIClient(logger, cfg.LLM)
 	llmp := llm.NewProvider(llmc)
 	ccf := fetcher.NewCardContentFactory(cfg.Picture, logger, nil, nil, llmp)

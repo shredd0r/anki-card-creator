@@ -8,11 +8,11 @@ import (
 )
 
 type Config struct {
-	Debugging bool          `yaml:"debugging"`
-	QueueSize uint          `yaml:"queue-size"`
-	Output    string        `yaml:"output"`
-	LLM       *LLMConfig    `yaml:"llm"`
-	Picture   PictureConfig `yaml:"picture"`
+	Debugging   bool              `yaml:"debugging"`
+	QueueSize   uint              `yaml:"queue-size"`
+	LLM         *LLMConfig        `yaml:"llm"`
+	Picture     PictureConfig     `yaml:"picture"`
+	AnkiConnect AnkiConnectConfig `yaml:"anki-connect"`
 }
 
 type GeminiConfig struct {
@@ -30,6 +30,12 @@ type LLMConfig struct {
 type PictureConfig struct {
 	CountSearches uint8 `yaml:"count-searches"`
 	MinimalRating uint8 `yaml:"min-rating"`
+}
+
+type AnkiConnectConfig struct {
+	BaseUrl string        `yaml:"base-url"` // AnkiConnect endpoint; defaults to http://127.0.0.1:8765 when empty
+	Token   string        `yaml:"token"`    // optional AnkiConnect API key
+	Timeout time.Duration `yaml:"timeout"`  // per-call budget for AnkiConnect requests
 }
 
 func Read(pathToFile string) (*Config, error) {
