@@ -48,14 +48,18 @@ func main() {
 	// NOTE: real LLM client call kept below but commented out, in favor of
 	// the mock client, so the pipeline can be exercised end-to-end without a
 	// live LLM server running.
-	// llmc := llm.NewOpenAIClient(logger, cfg.LLM)
+	// llmc, err := llm.NewOpenAIClient(logger, cfg.LLM)
+	// if err != nil {
+	// 	logger.Error("failed to create llm client", slog.Any("err", err))
+	// 	return
+	// }
 	llmc := llm.NewMockClient(logger)
 	llmp := llm.NewProvider(llmc)
 	ccf := fetcher.NewCardContentFactory(cfg.Picture, logger, duckduckgoImageProvider, cambridgeExtractor, llmp, speech)
 	cc := card.NewFlashcardCreator(cfg.Picture, logger, llmp, duckduckgoImageProvider, ccf)
 	te := extractor.NewTargetExtractor(logger)
 	s := service.NewAnkiCardCreator(*cfg, logger, as, cc)
-	targets, err := te.GetFromFile(ctx, "./test.json")
+	targets, err := te.GetFromFile(ctx, "./word.json")
 	if err != nil {
 		logger.Error(err.Error())
 		return

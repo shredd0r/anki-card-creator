@@ -1,48 +1,65 @@
 package llm
 
+import "github.com/tmc/langchaingo/llms/openai"
+
 var (
-	cardContentSchema = map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"paraphrase": map[string]any{
-				"type": "string",
-			},
-			"transcription": map[string]any{
-				"type": "string",
-			},
-			"examples": map[string]any{
-				"type":     "array",
-				"minItems": 3,
-				"maxItems": 5,
-				"items": map[string]any{
-					"type": "string",
+	cardContentResponseFormat = &openai.ResponseFormat{
+		Type: "json_schema",
+		JSONSchema: &openai.ResponseFormatJSONSchema{
+			Name:   "card_content",
+			Strict: true,
+			Schema: &openai.ResponseFormatJSONSchemaProperty{
+				Type: "object",
+				Properties: map[string]*openai.ResponseFormatJSONSchemaProperty{
+					"paraphrase": {
+						Type: "string",
+					},
+					"transcription": {
+						Type: "string",
+					},
+					"examples": {
+						Type:        "array",
+						Description: "3 to 5 example sentences",
+						Items: &openai.ResponseFormatJSONSchemaProperty{
+							Type: "string",
+						},
+					},
+					"synonyms": {
+						Type:        "array",
+						Description: "3 to 5 synonyms",
+						Items: &openai.ResponseFormatJSONSchemaProperty{
+							Type: "string",
+						},
+					},
 				},
-			},
-			"synonyms": map[string]any{
-				"type":     "array",
-				"minItems": 3,
-				"maxItems": 5,
-				"items": map[string]any{
-					"type": "string",
+				Required: []string{
+					"paraphrase",
+					"transcription",
+					"examples",
+					"synonyms",
 				},
+				AdditionalProperties: false,
 			},
 		},
-		"required": []string{
-			"paraphrase",
-			"transcription",
-			"examples",
-			"synonyms",
-		},
-		"additionalProperties": false,
 	}
-	ratePictureSchema = map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"rating": map[string]any{"type": "integer"},
+
+	ratePictureResponseFormat = &openai.ResponseFormat{
+		Type: "json_schema",
+		JSONSchema: &openai.ResponseFormatJSONSchema{
+			Name:   "rate_picture",
+			Strict: true,
+			Schema: &openai.ResponseFormatJSONSchemaProperty{
+				Type: "object",
+				Properties: map[string]*openai.ResponseFormatJSONSchemaProperty{
+					"rating": {
+						Type: "integer",
+					},
+				},
+				Required: []string{
+					"rating",
+				},
+				AdditionalProperties: false,
+			},
 		},
-		"required": []string{
-			"rating",
-		},
-		"additionalProperties": false,
 	}
 )
