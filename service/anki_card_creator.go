@@ -42,8 +42,16 @@ func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService anki
 func (c *AnkiCardCreator) Create(ctx context.Context, targets *[]extractor.TargetInfo) error {
 	c.logger.Info("start creating flashcard and store it in anki")
 
-	chanErr := make(chan error)
-	chanCompleteAddFlashcards := make(chan struct{})
+	// chanErr is sized so that every goroutine that might send to it (one per
+	// subject, plus the single AddFlashcard consumer) can always do so
+	// without blocking, even after Create has already returned via the first
+	// error - otherwise a second erroring goroutine would leak forever
+	// waiting on an unbuffered send nobody reads anymore.
+	chanErr := make(chan error, c.getCountOfSubject(targets)+1)
+	// chanCompleteAddFlashcards is buffered for the same reason: its single
+	// sender must never block, even in the rare case it fires at the same
+	// moment Create is already returning via chanErr.
+	chanCompleteAddFlashcards := make(chan struct{}, 1)
 	chanFlashcard := make(chan *models.Flashcard, c.queueSize)
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -51,27 +59,19 @@ func (c *AnkiCardCreator) Create(ctx context.Context, targets *[]extractor.Targe
 	go c.createAllFlashcards(ctxWithCancel, cancel, targets, chanFlashcard, chanErr)
 	go c.addFlashcardToPackage(ctxWithCancel, cancel, chanFlashcard, chanErr, chanCompleteAddFlashcards)
 
-	for {
-		select {
-		case <-ctxWithCancel.Done():
-		case <-chanCompleteAddFlashcards:
-			{
-				c.logger.Info("creating flashcards is done")
-				return nil
-			}
-		case err := <-chanErr:
-			{
-				c.logger.Error("received error during create flashcard", slog.Any("err", err))
-				return err
-			}
-		}
+	select {
+	case <-chanCompleteAddFlashcards:
+		c.logger.Info("creating flashcards is done")
+		return nil
+	case err := <-chanErr:
+		c.logger.Error("received error during create flashcard", slog.Any("err", err))
+		return err
 	}
 }
 
 func (c *AnkiCardCreator) createAllFlashcards(ctxWithCancel context.Context, cancel context.CancelFunc, targets *[]extractor.TargetInfo, chanFlashcard chan *models.Flashcard, chanErr chan error) {
 	chanQueue := make(chan struct{}, c.queueSize)
 	wg := sync.WaitGroup{}
-	defer cancel()
 
 	var indexSubject atomic.Int64
 	count := c.getCountOfSubject(targets)
@@ -94,7 +94,9 @@ func (c *AnkiCardCreator) createAllFlashcards(ctxWithCancel context.Context, can
 				flashcard, err := c.cardCreator.Create(ctxWithCancel, target.DeckName, subject, target.Tags)
 				if err != nil {
 					c.logger.Error("failed to create flashcard", slog.String("subject", subject), slog.Any("err", err))
+					cancel()
 					chanErr <- err
+					return
 				}
 				chanFlashcard <- flashcard
 
@@ -103,6 +105,11 @@ func (c *AnkiCardCreator) createAllFlashcards(ctxWithCancel context.Context, can
 		}
 	}
 	wg.Wait()
+	// All producer goroutines are done (whether they succeeded or errored),
+	// so no more sends to chanFlashcard can happen. Closing it here (rather
+	// than relying on context cancellation) is what lets the consumer detect
+	// "all flashcards produced" as a distinct event from "something failed".
+	close(chanFlashcard)
 }
 
 func (c *AnkiCardCreator) addFlashcardToPackage(ctxWithCancel context.Context, cancel context.CancelFunc, chanFlashcard chan *models.Flashcard, chanErr chan error, chanComplete chan struct{}) {
@@ -111,22 +118,22 @@ func (c *AnkiCardCreator) addFlashcardToPackage(ctxWithCancel context.Context, c
 		case <-ctxWithCancel.Done():
 			{
 				c.logger.Debug("context is done, stop goroutine 'addFlashcardToPackage'")
-				close(chanFlashcard)
-				chanComplete <- struct{}{}
 				return
 			}
 		case flashcard, ok := <-chanFlashcard:
 			{
-				if flashcard != nil {
-					if err := c.ankiService.AddFlashcard(ctxWithCancel, flashcard); err != nil {
-						c.logger.Error("failed to add flashcard via anki connect", slog.Any("err", err))
-						cancel()
-						chanErr <- err
-						return
-					}
-				}
 				if !ok {
-					c.logger.Debug("channel for flashcards already closed, stop goroutine 'addFlashcardToPackage'")
+					c.logger.Debug("channel for flashcards closed, all flashcards processed")
+					chanComplete <- struct{}{}
+					return
+				}
+				if flashcard == nil {
+					continue
+				}
+				if err := c.ankiService.AddFlashcard(ctxWithCancel, flashcard); err != nil {
+					c.logger.Error("failed to add flashcard via anki connect", slog.Any("err", err))
+					cancel()
+					chanErr <- err
 					return
 				}
 			}
