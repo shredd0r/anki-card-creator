@@ -5,12 +5,16 @@ import (
 	"log/slog"
 
 	"github.com/shredd0r/anki-card-creator/anki"
+	"github.com/shredd0r/anki-card-creator/browser"
 	"github.com/shredd0r/anki-card-creator/card"
 	"github.com/shredd0r/anki-card-creator/card/fetcher"
 	"github.com/shredd0r/anki-card-creator/config"
+	"github.com/shredd0r/anki-card-creator/downloader"
+	"github.com/shredd0r/anki-card-creator/duckduckgo"
 	"github.com/shredd0r/anki-card-creator/extractor"
 	"github.com/shredd0r/anki-card-creator/llm"
 	"github.com/shredd0r/anki-card-creator/service"
+	"github.com/shredd0r/anki-card-creator/tts"
 )
 
 func main() {
@@ -22,6 +26,18 @@ func main() {
 		logger.Error(err.Error())
 		return
 	}
+
+	br, err := browser.LaunchFirefox()
+	if err != nil {
+		logger.Error("failed to launch browser", slog.Any("err", err))
+		return
+	}
+	defer br.Close()
+
+	fileDownloader := downloader.NewFile(logger)
+	duckduckgoImageProvider := duckduckgo.NewImageProvider(logger, br, fileDownloader)
+	cambridgeExtractor := extractor.NewCambridge(logger, br, fileDownloader)
+	speech := tts.NewGoogleSpeech(logger, tts.LanguageEnglishUK)
 
 	as, err := anki.NewService(ctx, logger, cfg.AnkiConnect)
 	if err != nil {
@@ -35,8 +51,8 @@ func main() {
 	// llmc := llm.NewOpenAIClient(logger, cfg.LLM)
 	llmc := llm.NewMockClient(logger)
 	llmp := llm.NewProvider(llmc)
-	ccf := fetcher.NewCardContentFactory(cfg.Picture, logger, nil, nil, llmp)
-	cc := card.NewFlashcardCreator(cfg.Picture, logger, llmp, nil, ccf)
+	ccf := fetcher.NewCardContentFactory(cfg.Picture, logger, duckduckgoImageProvider, cambridgeExtractor, llmp, speech)
+	cc := card.NewFlashcardCreator(cfg.Picture, logger, llmp, duckduckgoImageProvider, ccf)
 	te := extractor.NewTargetExtractor(logger)
 	s := service.NewAnkiCardCreator(*cfg, logger, as, cc)
 	targets, err := te.GetFromFile(ctx, "./test.json")

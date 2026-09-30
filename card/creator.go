@@ -8,11 +8,9 @@ import (
 	"log/slog"
 	"sync"
 
-	htgotts "github.com/hegedustibor/htgo-tts"
-	"github.com/hegedustibor/htgo-tts/voices"
 	"github.com/shredd0r/anki-card-creator/card/fetcher"
 	"github.com/shredd0r/anki-card-creator/config"
-	"github.com/shredd0r/anki-card-creator/google"
+	"github.com/shredd0r/anki-card-creator/duckduckgo"
 	"github.com/shredd0r/anki-card-creator/llm"
 	"github.com/shredd0r/anki-card-creator/models"
 	"github.com/shredd0r/anki-card-creator/utils"
@@ -23,25 +21,23 @@ type Creator interface {
 }
 
 type implCreator struct {
-	pictureCfg          config.PictureConfig
-	logger              *slog.Logger
-	speech              *htgotts.Speech
-	llmProvider         llm.Provider
-	googleImageProvider google.Image
-	cardContentFactory  fetcher.CardContentFactory
+	pictureCfg              config.PictureConfig
+	logger                  *slog.Logger
+	llmProvider             llm.Provider
+	duckduckgoImageProvider duckduckgo.Image
+	cardContentFactory      fetcher.CardContentFactory
 }
 
 func NewFlashcardCreator(pictureCfg config.PictureConfig, logger *slog.Logger,
 	llmProvider llm.Provider,
-	googleImageProvider google.Image,
+	duckduckgoImageProvider duckduckgo.Image,
 	cardContentFactory fetcher.CardContentFactory) Creator {
 	return &implCreator{
-		pictureCfg:          pictureCfg,
-		logger:              logger.WithGroup("flashcard-creator"),
-		speech:              &htgotts.Speech{Language: voices.EnglishUK},
-		googleImageProvider: googleImageProvider,
-		llmProvider:         llmProvider,
-		cardContentFactory:  cardContentFactory,
+		pictureCfg:              pictureCfg,
+		logger:                  logger.WithGroup("flashcard-creator"),
+		duckduckgoImageProvider: duckduckgoImageProvider,
+		llmProvider:             llmProvider,
+		cardContentFactory:      cardContentFactory,
 	}
 }
 
@@ -92,7 +88,7 @@ func (c *implCreator) create(ctx context.Context, cardContentFetcher fetcher.Car
 		{
 			fieldName: "pronunciation",
 			callMethod: func(ctx context.Context, subject string, usingContext *[]string) error {
-				respPronunciation, err := cardContentFetcher.GetPronunciation(subject)
+				respPronunciation, err := cardContentFetcher.GetPronunciation(ctx, subject)
 				pronunciation = respPronunciation
 				return err
 			},

@@ -32,7 +32,7 @@ func TestPositiveTests(t *testing.T) {
 
 	logger := slog.Default()
 	for _, testcase := range testcases {
-		factory := NewCardContentFactory(config.PictureConfig{}, logger, nil, nil, nil)
+		factory := NewCardContentFactory(config.PictureConfig{}, logger, nil, nil, nil, nil)
 
 		t.Run(testcase.Name, func(t *testing.T) {
 			fieldFetcher, err := factory.Get(testcase.SubjectType)
@@ -45,7 +45,7 @@ func TestPositiveTests(t *testing.T) {
 
 func TestUnsupportedSubjectType(t *testing.T) {
 	logger := slog.Default()
-	factory := NewCardContentFactory(config.PictureConfig{}, logger, nil, nil, nil)
+	factory := NewCardContentFactory(config.PictureConfig{}, logger, nil, nil, nil, nil)
 
 	fieldFetcher, err := factory.Get(models.SubjectTypeNone)
 	assert.Nil(t, fieldFetcher)

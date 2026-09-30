@@ -8,7 +8,7 @@ import (
 
 	mock_fetcher "github.com/shredd0r/anki-card-creator/card/fetcher/mock"
 	"github.com/shredd0r/anki-card-creator/config"
-	mock_google "github.com/shredd0r/anki-card-creator/google/mock"
+	mock_duckduckgo "github.com/shredd0r/anki-card-creator/duckduckgo/mock"
 	mock_llm "github.com/shredd0r/anki-card-creator/llm/mock"
 	"github.com/shredd0r/anki-card-creator/models"
 	"github.com/shredd0r/anki-card-creator/utils"
@@ -18,7 +18,7 @@ import (
 
 type funcForCreateCardContentComponentFether func(expectedFlashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetcher.MockCardContent
 type llmProviderExpectedCalls func(subject string, usingContext *[]string, cfg config.PictureConfig, gp *mock_llm.MockProvider)
-type googleImageProviderExpectedCalls func(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage)
+type duckduckgoImageProviderExpectedCalls func(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_duckduckgo.MockImage)
 type cardContentFetcherFactoryExpectedCalls func(expectedFlashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory)
 
 type positiveCase struct {
@@ -26,7 +26,7 @@ type positiveCase struct {
 	UsingContextForFlashcard               *[]string
 	ExpectedFlashcard                      *models.Flashcard
 	llmProviderExpectedCalls               llmProviderExpectedCalls
-	googleImageProviderExpectedCalls       googleImageProviderExpectedCalls
+	duckduckgoImageProviderExpectedCalls   duckduckgoImageProviderExpectedCalls
 	cardContentFetcherFactoryExpectedCalls cardContentFetcherFactoryExpectedCalls
 }
 
@@ -55,7 +55,7 @@ func TestPositiveCases(t *testing.T) {
 				Tags:     []string{"context-word"},
 			},
 			llmProviderExpectedCalls:               llmProviderExpectedCallsForRatingPicture,
-			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsForGetOnePicture,
+			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderExpectedCallsForGetOnePicture,
 			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
 		},
 		{
@@ -71,7 +71,7 @@ func TestPositiveCases(t *testing.T) {
 				Tags:        []string{"context-phrase"},
 			},
 			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
-			googleImageProviderExpectedCalls:       googleImageProviderWithoutExpectdCalls,
+			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderWithoutExpectdCalls,
 			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
 		},
 		{
@@ -87,7 +87,7 @@ func TestPositiveCases(t *testing.T) {
 				Tags:        []string{},
 			},
 			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
-			googleImageProviderExpectedCalls:       googleImageProviderWithoutExpectdCalls,
+			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderWithoutExpectdCalls,
 			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
 		},
 		{
@@ -109,7 +109,7 @@ func TestPositiveCases(t *testing.T) {
 				Tags:     []string{"context-without-image"},
 			},
 			llmProviderExpectedCalls:               llmProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed,
-			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsWhereUseAllAttempts,
+			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderExpectedCallsWhereUseAllAttempts,
 			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
 		},
 	}
@@ -124,11 +124,11 @@ func TestPositiveCases(t *testing.T) {
 	for _, testcase := range testcases {
 		t.Run(testcase.Name, func(t *testing.T) {
 			gp := mock_llm.NewMockProvider(ctrl)
-			gip := mock_google.NewMockImage(ctrl)
+			gip := mock_duckduckgo.NewMockImage(ctrl)
 			cccf := mock_fetcher.NewMockCardContentFactory(ctrl)
 
 			testcase.llmProviderExpectedCalls(testcase.ExpectedFlashcard.Subject, testcase.UsingContextForFlashcard, cfg, gp)
-			testcase.googleImageProviderExpectedCalls(testcase.ExpectedFlashcard, testcase.UsingContextForFlashcard, cfg, ctrl, gip)
+			testcase.duckduckgoImageProviderExpectedCalls(testcase.ExpectedFlashcard, testcase.UsingContextForFlashcard, cfg, ctrl, gip)
 			testcase.cardContentFetcherFactoryExpectedCalls(testcase.ExpectedFlashcard, testcase.UsingContextForFlashcard, ctrl, cccf)
 
 			c := NewFlashcardCreator(cfg, logger, gp, gip, cccf)
@@ -146,7 +146,7 @@ type negativeCase struct {
 	Subject                                string
 	ExpectedErrMessage                     string
 	llmProviderExpectedCalls               llmProviderExpectedCalls
-	googleImageProviderExpectedCalls       googleImageProviderExpectedCalls
+	duckduckgoImageProviderExpectedCalls   duckduckgoImageProviderExpectedCalls
 	cardContentFetcherFactoryExpectedCalls cardContentFetcherFactoryExpectedCalls
 }
 
@@ -158,7 +158,7 @@ func TestNegativeCases(t *testing.T) {
 			Subject:                                "err-card-content",
 			ExpectedErrMessage:                     "error from card content fetcher",
 			llmProviderExpectedCalls:               llmProviderExpectedCallsForRatingPicture,
-			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsForGetOnePicture,
+			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderExpectedCallsForGetOnePicture,
 			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetCardContentMethodReturnErr,
 		},
 		{
@@ -166,7 +166,7 @@ func TestNegativeCases(t *testing.T) {
 			Subject:                                "test-subject",
 			ExpectedErrMessage:                     "unsupported subject type",
 			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
-			googleImageProviderExpectedCalls:       googleImageProviderWithoutExpectdCalls,
+			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderWithoutExpectdCalls,
 			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereReturnUnsupportedSubjectTypeErr,
 		},
 		{
@@ -174,15 +174,15 @@ func TestNegativeCases(t *testing.T) {
 			Subject:                                "test-subject",
 			ExpectedErrMessage:                     "request limit reached",
 			llmProviderExpectedCalls:               llmProviderExpectedCallsWhereReturnErr,
-			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsForGetOnePicture,
+			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderExpectedCallsForGetOnePicture,
 			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetPictureReturnErr,
 		},
 		{
-			Name:                                   "google image provider return err",
+			Name:                                   "duckduckgo image provider return err",
 			Subject:                                "test-subject",
 			ExpectedErrMessage:                     "index out of range",
 			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
-			googleImageProviderExpectedCalls:       googleImageProviderExpectedCallsWhereReturnErr,
+			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderExpectedCallsWhereReturnErr,
 			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetPictureReturnErr,
 		},
 		{
@@ -203,14 +203,14 @@ func TestNegativeCases(t *testing.T) {
 	for _, testcase := range testcases {
 		t.Run(testcase.Name, func(t *testing.T) {
 			gp := mock_llm.NewMockProvider(ctrl)
-			gip := mock_google.NewMockImage(ctrl)
+			gip := mock_duckduckgo.NewMockImage(ctrl)
 			cccf := mock_fetcher.NewMockCardContentFactory(ctrl)
 			flashcard := &models.Flashcard{
 				Subject:     testcase.Subject,
 				SubjectType: utils.GetSubjectType(testcase.Subject),
 			}
 			testcase.llmProviderExpectedCalls(testcase.Subject, usingContexForTest, cfg, gp)
-			testcase.googleImageProviderExpectedCalls(flashcard, usingContexForTest, cfg, ctrl, gip)
+			testcase.duckduckgoImageProviderExpectedCalls(flashcard, usingContexForTest, cfg, ctrl, gip)
 			testcase.cardContentFetcherFactoryExpectedCalls(flashcard, usingContexForTest, ctrl, cccf)
 
 			c := NewFlashcardCreator(cfg, logger, gp, gip, cccf)
@@ -249,21 +249,21 @@ func llmProviderExpectedCallsWhereReturnErr(subject string, usingContext *[]stri
 		Return(nil, errors.New("request limit reached"))
 }
 
-func googleImageProviderExpectedCallsForGetOnePicture(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
-	qgip := mock_google.NewMockResult(ctrl)
+func duckduckgoImageProviderExpectedCallsForGetOnePicture(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_duckduckgo.MockImage) {
+	qgip := mock_duckduckgo.NewMockResult(ctrl)
 
 	qgip.
 		EXPECT().
 		Get(gomock.Any(), expectedFlashcard.Subject, uint(0)).
 		Return(expectedFlashcard.Picture, nil)
 
-	googleImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
+	duckduckgoImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
 }
 
-func googleImageProviderWithoutExpectdCalls(expectedFlashcard *models.Flashcard, usingContex *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
+func duckduckgoImageProviderWithoutExpectdCalls(expectedFlashcard *models.Flashcard, usingContex *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_duckduckgo.MockImage) {
 }
 
-func googleImageProviderExpectedCallNewQuery(subject string, usingContext *[]string, gip *mock_google.MockImage, qgip *mock_google.MockResult) {
+func duckduckgoImageProviderExpectedCallNewQuery(subject string, usingContext *[]string, gip *mock_duckduckgo.MockImage, qgip *mock_duckduckgo.MockResult) {
 	query := subject
 	if usingContext != nil {
 		query += " " + strings.Join(*usingContext, ", ")
@@ -275,8 +275,8 @@ func googleImageProviderExpectedCallNewQuery(subject string, usingContext *[]str
 		Return(qgip, nil)
 }
 
-func googleImageProviderExpectedCallsWhereUseAllAttempts(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
-	qgip := mock_google.NewMockResult(ctrl)
+func duckduckgoImageProviderExpectedCallsWhereUseAllAttempts(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_duckduckgo.MockImage) {
+	qgip := mock_duckduckgo.NewMockResult(ctrl)
 
 	for attempt := range uint(cfg.CountSearches) {
 		qgip.
@@ -286,11 +286,11 @@ func googleImageProviderExpectedCallsWhereUseAllAttempts(expectedFlashcard *mode
 			Return(expectedFlashcard.Picture, nil)
 	}
 
-	googleImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
+	duckduckgoImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
 }
 
-func googleImageProviderExpectedCallsWhereReturnErr(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_google.MockImage) {
-	qgip := mock_google.NewMockResult(ctrl)
+func duckduckgoImageProviderExpectedCallsWhereReturnErr(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_duckduckgo.MockImage) {
+	qgip := mock_duckduckgo.NewMockResult(ctrl)
 
 	qgip.
 		EXPECT().
@@ -298,7 +298,7 @@ func googleImageProviderExpectedCallsWhereReturnErr(expectedFlashcard *models.Fl
 		Times(1).
 		Return(nil, errors.New("index out of range"))
 
-	googleImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
+	duckduckgoImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
 
 }
 

@@ -7,10 +7,11 @@ import (
 	"log/slog"
 
 	"github.com/shredd0r/anki-card-creator/config"
+	"github.com/shredd0r/anki-card-creator/duckduckgo"
 	"github.com/shredd0r/anki-card-creator/extractor"
-	"github.com/shredd0r/anki-card-creator/google"
 	"github.com/shredd0r/anki-card-creator/llm"
 	"github.com/shredd0r/anki-card-creator/models"
+	"github.com/shredd0r/anki-card-creator/tts"
 )
 
 var errUnsupportedSubjectType = errors.New("unsupported subject type")
@@ -27,13 +28,13 @@ type implCardContentFactory struct {
 	phraseCardContent  CardContent
 }
 
-func NewCardContentFactory(cfg config.PictureConfig, logger *slog.Logger, googleImageProvider google.Image, cambridgeExtractor extractor.Cambridge,
-	llmProvider llm.Provider) CardContentFactory {
+func NewCardContentFactory(cfg config.PictureConfig, logger *slog.Logger, duckduckgoImageProvider duckduckgo.Image, cambridgeExtractor extractor.Cambridge,
+	llmProvider llm.Provider, speech tts.Speech) CardContentFactory {
 	return &implCardContentFactory{
 		logger:             logger.WithGroup("field-component-fetcher-factory"),
 		cambridgeExtractor: cambridgeExtractor,
 		llmProvider:        llmProvider,
-		wordCardContent:    NewWordCardContent(cfg, logger, googleImageProvider, llmProvider, cambridgeExtractor),
+		wordCardContent:    NewWordCardContent(cfg, logger, duckduckgoImageProvider, llmProvider, cambridgeExtractor, speech),
 		phraseCardContent:  NewPhraseCardContent(logger, llmProvider),
 	}
 }
