@@ -17,6 +17,18 @@ const (
 	ankiConnectVersion = 6
 )
 
+// newAnkiConnectHTTPClient builds an *http.Client with keep-alives disabled.
+// AnkiConnect's built-in Python HTTP server doesn't reliably support
+// persistent connections - it can close a connection the OS/Go transport
+// still considers idle-but-reusable, which surfaces as a spurious "EOF" on
+// whichever request next tries to reuse it. Since every call here is to
+// localhost, paying for a fresh TCP handshake per request is negligible.
+func newAnkiConnectHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{DisableKeepAlives: true},
+	}
+}
+
 // Client is a thin transport seam over AnkiConnect's HTTP API, kept
 // interface-shaped so implService stays mockable per the repo's convention.
 type Client interface {

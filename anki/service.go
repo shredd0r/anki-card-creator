@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
 
 	"github.com/shredd0r/anki-card-creator/config"
@@ -41,7 +40,7 @@ type implService struct {
 func NewService(ctx context.Context, logger *slog.Logger, cfg config.AnkiConnectConfig) (Service, error) {
 	s := &implService{
 		logger:    logger.WithGroup("anki-service"),
-		client:    NewClient(http.DefaultClient, cfg),
+		client:    NewClient(newAnkiConnectHTTPClient(), cfg),
 		modelName: model_name,
 		cfg:       cfg,
 		decks:     map[string]struct{}{},
