@@ -1,9 +1,8 @@
-1. File @content_test.go. Add testcases for checking count searching pictures. Cases which need to add:
-    - llmProvider.RatePicture returns n - 1 times rating less than configured and n time great than configured.
-    - llmProvider.RatePicture returns n time rating less than configured
-    - llmProvider.RatePicture return first time rating equal configured rating
-    - llmProvider.RatePicture method return error
-    - googleImageProvider return error
-    - googleImageProvider return n - 1 times not suitable picture, last time return error
+1. Pronunciation doesn't run in Anki 
 2. Subject in flashcard should be in lowercase
-3. TUI interface for service
+3. Research about MCP server for anki. If it reasonable for project integrate it (https://github.com/ankimcp/anki-mcp-server-addon)
+    Functions:
+    - Get decks
+    - Create new card by template
+4. TUI interface for service
+5. Integrate tts with espeak-ng
