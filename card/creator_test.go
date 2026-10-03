@@ -1,397 +1,153 @@
 package card
 
 import (
+	"context"
 	"errors"
 	"log/slog"
-	"strings"
 	"testing"
 
 	mock_fetcher "github.com/shredd0r/anki-card-creator/card/fetcher/mock"
-	"github.com/shredd0r/anki-card-creator/config"
-	mock_duckduckgo "github.com/shredd0r/anki-card-creator/duckduckgo/mock"
-	"github.com/shredd0r/anki-card-creator/llm"
-	mock_llm "github.com/shredd0r/anki-card-creator/llm/mock"
 	"github.com/shredd0r/anki-card-creator/models"
-	"github.com/shredd0r/anki-card-creator/utils"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
-type funcForCreateCardContentComponentFether func(expectedFlashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetcher.MockCardContent
-type llmProviderExpectedCalls func(subject string, usingContext *[]string, cfg config.PictureConfig, gp *mock_llm.MockProvider)
-type duckduckgoImageProviderExpectedCalls func(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_duckduckgo.MockImage)
-type cardContentFetcherFactoryExpectedCalls func(expectedFlashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory)
+func TestCreate_AssemblesFlashcardFromCardContent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	cc := mock_fetcher.NewMockCardContent(ctrl)
 
-type positiveCase struct {
-	Name                                   string
-	UsingContextForFlashcard               *[]string
-	ExpectedFlashcard                      *models.Flashcard
-	llmProviderExpectedCalls               llmProviderExpectedCalls
-	duckduckgoImageProviderExpectedCalls   duckduckgoImageProviderExpectedCalls
-	cardContentFetcherFactoryExpectedCalls cardContentFetcherFactoryExpectedCalls
-}
-
-func TestPositiveCases(t *testing.T) {
 	transcription := "word-transcription"
-	testcases := []positiveCase{
-		{
-			Name:                     "create new flashcard for word",
-			UsingContextForFlashcard: &[]string{"context-word"},
-			ExpectedFlashcard: &models.Flashcard{
-				Subject:       "word",
-				SubjectType:   models.SubjectTypeWord,
-				DeckName:      "test-deck",
-				Examples:      []string{"word-example"},
-				Paraphrase:    "word-explain",
-				Transcription: &transcription,
-				Pronunciation: &models.File{
-					Filename: "word.mp3",
-					MIMEType: "audio/mpeg",
-				},
-				Picture: &models.File{
-					Filename: "word.jpeg",
-					MIMEType: "image/jpeg",
-				},
-				Synonyms: []string{"synonym"},
-				Tags:     []string{"context-word"},
-			},
-			llmProviderExpectedCalls:               llmProviderExpectedCallsForRatingPicture,
-			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderExpectedCallsForGetOnePicture,
-			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
-		},
-		{
-			Name:                     "create new flashcard for phrase",
-			UsingContextForFlashcard: &[]string{"context-phrase"},
-			ExpectedFlashcard: &models.Flashcard{
-				Subject:     "subject for phrase",
-				SubjectType: models.SubjectTypePhrase,
-				DeckName:    "test-deck",
-				Examples:    []string{"phrase-example"},
-				Paraphrase:  "phrase-explain",
-				Synonyms:    []string{"synonym"},
-				Tags:        []string{"context-phrase"},
-			},
-			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
-			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderWithoutExpectdCalls,
-			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
-		},
-		{
-			Name:                     "create new flashcard without using context",
-			UsingContextForFlashcard: nil,
-			ExpectedFlashcard: &models.Flashcard{
-				Subject:     "subject for phrase",
-				SubjectType: models.SubjectTypePhrase,
-				DeckName:    "test-deck",
-				Examples:    []string{"phrase-example"},
-				Paraphrase:  "phrase-explain",
-				Synonyms:    []string{"synonym"},
-				Tags:        []string{},
-			},
-			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
-			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderWithoutExpectdCalls,
-			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
-		},
-		{
-			Name:                     "not found matched image",
-			UsingContextForFlashcard: &[]string{"context-without-image"},
-			ExpectedFlashcard: &models.Flashcard{
-				Subject:       "notmatchedsubject",
-				SubjectType:   models.SubjectTypeWord,
-				DeckName:      "not-matched-deck",
-				Examples:      []string{"word-example"},
-				Paraphrase:    "word-explain",
-				Transcription: &transcription,
-				Pronunciation: &models.File{
-					Filename: "word.mp3",
-					MIMEType: "audio/mpeg",
-				},
-				Picture:  nil,
-				Synonyms: []string{"synonym"},
-				Tags:     []string{"context-without-image"},
-			},
-			llmProviderExpectedCalls:               llmProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed,
-			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderExpectedCallsWhereUseAllAttempts,
-			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults,
-		},
-	}
+	picture := &models.File{Filename: "word.jpeg", MIMEType: "image/jpeg"}
+	ttsPronunciation := &models.File{Filename: "word.mp3", MIMEType: "audio/mpeg"}
+	usingContext := &[]string{"context-word"}
 
-	logger := slog.Default()
+	cc.EXPECT().GetCardContent(gomock.Any(), "word", usingContext).Return(&models.CardContent{
+		Paraphrase:    "word-explain",
+		Transcription: &transcription,
+		Examples:      []string{"word-example"},
+		Synonyms:      []string{"synonym"},
+	}, nil)
+	cc.EXPECT().GetPicture(gomock.Any(), "word", usingContext).Return(picture, nil)
+	cc.EXPECT().GetPronunciation(gomock.Any(), "word").Return(ttsPronunciation, nil)
+
+	creator := NewFlashcardCreator(slog.Default(), cc)
+	got, err := creator.Create(context.Background(), "test-deck", "word", usingContext)
+	require.NoError(t, err)
+
+	assert.Equal(t, &models.Flashcard{
+		Subject:       "word",
+		SubjectType:   models.SubjectTypeWord,
+		DeckName:      "test-deck",
+		Examples:      []string{"word-example"},
+		Paraphrase:    "word-explain",
+		Transcription: &transcription,
+		Pronunciation: ttsPronunciation,
+		Picture:       picture,
+		Synonyms:      []string{"synonym"},
+		Tags:          []string{"context-word"},
+	}, got)
+}
+
+func TestCreate_CardContentPronunciationOverridesTTS(t *testing.T) {
 	ctrl := gomock.NewController(t)
+	cc := mock_fetcher.NewMockCardContent(ctrl)
 
-	cfg := config.PictureConfig{
-		CountSearches: 3,
-		MinimalRating: 7,
+	dictionaryPronunciation := &models.File{Filename: "cambridge.mp3", MIMEType: "audio/mpeg"}
+	ttsPronunciation := &models.File{Filename: "tts.mp3", MIMEType: "audio/mpeg"}
+
+	cc.EXPECT().GetCardContent(gomock.Any(), "word", (*[]string)(nil)).Return(&models.CardContent{
+		Paraphrase:    "word-explain",
+		Pronunciation: dictionaryPronunciation,
+	}, nil)
+	cc.EXPECT().GetPicture(gomock.Any(), "word", (*[]string)(nil)).Return(nil, nil)
+	// GetPronunciation (TTS) still runs concurrently even when the dictionary
+	// already has audio - its result must be discarded in favor of it.
+	cc.EXPECT().GetPronunciation(gomock.Any(), "word").Return(ttsPronunciation, nil)
+
+	creator := NewFlashcardCreator(slog.Default(), cc)
+	got, err := creator.Create(context.Background(), "test-deck", "word", nil)
+	require.NoError(t, err)
+	assert.Equal(t, dictionaryPronunciation, got.Pronunciation)
+}
+
+func TestCreate_NoUsingContextProducesEmptyTags(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	cc := mock_fetcher.NewMockCardContent(ctrl)
+
+	cc.EXPECT().GetCardContent(gomock.Any(), "subject", (*[]string)(nil)).Return(&models.CardContent{Paraphrase: "p"}, nil)
+	cc.EXPECT().GetPicture(gomock.Any(), "subject", (*[]string)(nil)).Return(nil, nil)
+	cc.EXPECT().GetPronunciation(gomock.Any(), "subject").Return(nil, nil)
+
+	creator := NewFlashcardCreator(slog.Default(), cc)
+	got, err := creator.Create(context.Background(), "test-deck", "subject", nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{}, got.Tags)
+}
+
+func TestCreate_SubjectTypeComputedFromSubjectShape(t *testing.T) {
+	testcases := []struct {
+		subject  string
+		expected models.SubjectType
+	}{
+		{subject: "word", expected: models.SubjectTypeWord},
+		{subject: "a phrase", expected: models.SubjectTypePhrase},
 	}
-	for _, testcase := range testcases {
-		t.Run(testcase.Name, func(t *testing.T) {
-			gp := mock_llm.NewMockProvider(ctrl)
-			gip := mock_duckduckgo.NewMockImage(ctrl)
-			cccf := mock_fetcher.NewMockCardContentFactory(ctrl)
 
-			testcase.llmProviderExpectedCalls(testcase.ExpectedFlashcard.Subject, testcase.UsingContextForFlashcard, cfg, gp)
-			testcase.duckduckgoImageProviderExpectedCalls(testcase.ExpectedFlashcard, testcase.UsingContextForFlashcard, cfg, ctrl, gip)
-			testcase.cardContentFetcherFactoryExpectedCalls(testcase.ExpectedFlashcard, testcase.UsingContextForFlashcard, ctrl, cccf)
+	for _, tc := range testcases {
+		t.Run(tc.subject, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			cc := mock_fetcher.NewMockCardContent(ctrl)
+			cc.EXPECT().GetCardContent(gomock.Any(), tc.subject, (*[]string)(nil)).Return(&models.CardContent{}, nil)
+			cc.EXPECT().GetPicture(gomock.Any(), tc.subject, (*[]string)(nil)).Return(nil, nil)
+			cc.EXPECT().GetPronunciation(gomock.Any(), tc.subject).Return(nil, nil)
 
-			c := NewFlashcardCreator(cfg, logger, gp, gip, cccf)
-
-			actualFlashcard, err := c.Create(t.Context(), testcase.ExpectedFlashcard.DeckName, testcase.ExpectedFlashcard.Subject, testcase.UsingContextForFlashcard)
-			assert.Nil(t, err)
-
-			assert.Equal(t, testcase.ExpectedFlashcard, actualFlashcard)
+			creator := NewFlashcardCreator(slog.Default(), cc)
+			got, err := creator.Create(context.Background(), "deck", tc.subject, nil)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, got.SubjectType)
 		})
 	}
 }
 
-type negativeCase struct {
-	Name                                   string
-	Subject                                string
-	ExpectedErrMessage                     string
-	llmProviderExpectedCalls               llmProviderExpectedCalls
-	duckduckgoImageProviderExpectedCalls   duckduckgoImageProviderExpectedCalls
-	cardContentFetcherFactoryExpectedCalls cardContentFetcherFactoryExpectedCalls
-}
-
-func TestNegativeCases(t *testing.T) {
-	usingContexForTest := &[]string{"using-context"}
-	testcases := []negativeCase{
-		{
-			Name:                                   "error from get card content method",
-			Subject:                                "err-card-content",
-			ExpectedErrMessage:                     "error from card content fetcher",
-			llmProviderExpectedCalls:               llmProviderExpectedCallsForRatingPicture,
-			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderExpectedCallsForGetOnePicture,
-			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetCardContentMethodReturnErr,
-		},
-		{
-			Name:                                   "unsupported subjectType",
-			Subject:                                "test-subject",
-			ExpectedErrMessage:                     "unsupported subject type",
-			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
-			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderWithoutExpectdCalls,
-			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereReturnUnsupportedSubjectTypeErr,
-		},
-		{
-			Name:                                   "llm provider return err",
-			Subject:                                "test-subject",
-			ExpectedErrMessage:                     "request limit reached",
-			llmProviderExpectedCalls:               llmProviderExpectedCallsWhereReturnErr,
-			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderExpectedCallsForGetOnePicture,
-			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetPictureReturnErr,
-		},
-		{
-			Name:                                   "duckduckgo image provider return err",
-			Subject:                                "test-subject",
-			ExpectedErrMessage:                     "index out of range",
-			llmProviderExpectedCalls:               llmProviderWithoutExpectdCalls,
-			duckduckgoImageProviderExpectedCalls:   duckduckgoImageProviderExpectedCallsWhereReturnErr,
-			cardContentFetcherFactoryExpectedCalls: fetcherFactoryExpectedCallsWhereGetPictureReturnErr,
-		},
-		{
-			Name:               "pronunciation generation method return err",
-			Subject:            "test-subject",
-			ExpectedErrMessage: "",
-		},
-	}
-
-	logger := slog.Default()
+func TestCreate_GetCardContentErrorPropagates(t *testing.T) {
 	ctrl := gomock.NewController(t)
+	cc := mock_fetcher.NewMockCardContent(ctrl)
 
-	cfg := config.PictureConfig{
-		CountSearches: 3,
-		MinimalRating: 7,
-	}
+	cc.EXPECT().GetCardContent(gomock.Any(), "subject", (*[]string)(nil)).Return(nil, errors.New("card content failed"))
+	cc.EXPECT().GetPicture(gomock.Any(), "subject", (*[]string)(nil)).AnyTimes().Return(nil, nil)
+	cc.EXPECT().GetPronunciation(gomock.Any(), "subject").AnyTimes().Return(nil, nil)
 
-	for _, testcase := range testcases {
-		t.Run(testcase.Name, func(t *testing.T) {
-			gp := mock_llm.NewMockProvider(ctrl)
-			gip := mock_duckduckgo.NewMockImage(ctrl)
-			cccf := mock_fetcher.NewMockCardContentFactory(ctrl)
-			flashcard := &models.Flashcard{
-				Subject:     testcase.Subject,
-				SubjectType: utils.GetSubjectType(testcase.Subject),
-			}
-			testcase.llmProviderExpectedCalls(testcase.Subject, usingContexForTest, cfg, gp)
-			testcase.duckduckgoImageProviderExpectedCalls(flashcard, usingContexForTest, cfg, ctrl, gip)
-			testcase.cardContentFetcherFactoryExpectedCalls(flashcard, usingContexForTest, ctrl, cccf)
-
-			c := NewFlashcardCreator(cfg, logger, gp, gip, cccf)
-
-			flashcard, err := c.Create(t.Context(), "test-deckname", testcase.Subject, usingContexForTest)
-			assert.Nil(t, flashcard)
-			assert.EqualError(t, err, testcase.ExpectedErrMessage)
-		})
-	}
+	creator := NewFlashcardCreator(slog.Default(), cc)
+	got, err := creator.Create(context.Background(), "deck", "subject", nil)
+	require.Nil(t, got)
+	assert.EqualError(t, err, "card content failed")
 }
 
-// NOTE: implCreator.create() doesn't call llmProvider.RatePicture directly -
-// picture rating is delegated to (and mocked via) CardContent.GetPicture, so
-// these expectations are intentionally AnyTimes() rather than a fixed Times()
-// count.
-func llmProviderExpectedCallsForRatingPicture(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
-	llmp.EXPECT().
-		RatePicture(gomock.Any(), subject, gomock.Any()).
-		AnyTimes().
-		Return(&llm.RatedPictureContent{Rating: cfg.MinimalRating}, nil)
+func TestCreate_GetPictureErrorPropagates(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	cc := mock_fetcher.NewMockCardContent(ctrl)
+
+	cc.EXPECT().GetCardContent(gomock.Any(), "subject", (*[]string)(nil)).AnyTimes().Return(&models.CardContent{}, nil)
+	cc.EXPECT().GetPicture(gomock.Any(), "subject", (*[]string)(nil)).Return(nil, errors.New("picture search failed"))
+	cc.EXPECT().GetPronunciation(gomock.Any(), "subject").AnyTimes().Return(nil, nil)
+
+	creator := NewFlashcardCreator(slog.Default(), cc)
+	got, err := creator.Create(context.Background(), "deck", "subject", nil)
+	require.Nil(t, got)
+	assert.EqualError(t, err, "picture search failed")
 }
 
-func llmProviderWithoutExpectdCalls(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
-}
+func TestCreate_GetPronunciationErrorPropagates(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	cc := mock_fetcher.NewMockCardContent(ctrl)
 
-func llmProviderExpectedCallsWhereAllPictureHaveRatingLessThanNeed(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
-	rating := cfg.MinimalRating - 1
-	llmp.
-		EXPECT().
-		RatePicture(gomock.Any(), subject, gomock.Any()).
-		AnyTimes().
-		Return(&llm.RatedPictureContent{Rating: rating}, nil)
-}
+	cc.EXPECT().GetCardContent(gomock.Any(), "subject", (*[]string)(nil)).AnyTimes().Return(&models.CardContent{}, nil)
+	cc.EXPECT().GetPicture(gomock.Any(), "subject", (*[]string)(nil)).AnyTimes().Return(nil, nil)
+	cc.EXPECT().GetPronunciation(gomock.Any(), "subject").Return(nil, errors.New("tts failed"))
 
-func llmProviderExpectedCallsWhereReturnErr(subject string, usingContext *[]string, cfg config.PictureConfig, llmp *mock_llm.MockProvider) {
-	llmp.
-		EXPECT().
-		RatePicture(gomock.Any(), subject, gomock.Any()).
-		AnyTimes().
-		Return(nil, errors.New("request limit reached"))
-}
-
-func duckduckgoImageProviderExpectedCallsForGetOnePicture(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_duckduckgo.MockImage) {
-	qgip := mock_duckduckgo.NewMockResult(ctrl)
-
-	qgip.
-		EXPECT().
-		Get(gomock.Any(), expectedFlashcard.Subject, uint(0)).
-		Return(expectedFlashcard.Picture, nil)
-
-	duckduckgoImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
-}
-
-func duckduckgoImageProviderWithoutExpectdCalls(expectedFlashcard *models.Flashcard, usingContex *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_duckduckgo.MockImage) {
-}
-
-func duckduckgoImageProviderExpectedCallNewQuery(subject string, usingContext *[]string, gip *mock_duckduckgo.MockImage, qgip *mock_duckduckgo.MockResult) {
-	query := subject
-	if usingContext != nil {
-		query += " " + strings.Join(*usingContext, ", ")
-	}
-
-	gip.
-		EXPECT().
-		Request(gomock.Any(), query).
-		Return(qgip, nil)
-}
-
-func duckduckgoImageProviderExpectedCallsWhereUseAllAttempts(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_duckduckgo.MockImage) {
-	qgip := mock_duckduckgo.NewMockResult(ctrl)
-
-	for attempt := range uint(cfg.CountSearches) {
-		qgip.
-			EXPECT().
-			Get(gomock.Any(), expectedFlashcard.Subject, attempt).
-			Times(1).
-			Return(expectedFlashcard.Picture, nil)
-	}
-
-	duckduckgoImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
-}
-
-func duckduckgoImageProviderExpectedCallsWhereReturnErr(expectedFlashcard *models.Flashcard, usingContext *[]string, cfg config.PictureConfig, ctrl *gomock.Controller, gip *mock_duckduckgo.MockImage) {
-	qgip := mock_duckduckgo.NewMockResult(ctrl)
-
-	qgip.
-		EXPECT().
-		Get(gomock.Any(), expectedFlashcard.Subject, uint(0)).
-		Times(1).
-		Return(nil, errors.New("index out of range"))
-
-	duckduckgoImageProviderExpectedCallNewQuery(expectedFlashcard.Subject, usingContext, gip, qgip)
-
-}
-
-func fetcherFactoryExpectedCallsWhereFetchersReturnCorrectResults(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory) {
-	fetcherFactoryExpectedCallsWhereFetchersReturnBy(flashcard, usingContext, ctrl, cccf, mockCardContentComponentFetchersForFlashcard)
-}
-
-func fetcherFactoryExpectedCallsWhereGetCardContentMethodReturnErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory) {
-	fetcherFactoryExpectedCallsWhereFetchersReturnBy(flashcard, usingContext, ctrl, cccf, mockCardContentComponentFetchersWithErr)
-}
-
-func fetcherFactoryExpectedCallsWhereFetchersReturnBy(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory, funcForCreateFetherForFlashcard funcForCreateCardContentComponentFether) {
-	mockCardContentComponent := funcForCreateFetherForFlashcard(flashcard, usingContext, ctrl)
-
-	cccf.
-		EXPECT().
-		Get(models.SubjectType(flashcard.SubjectType)).
-		Times(1).
-		Return(mockCardContentComponent, nil)
-}
-
-func fetcherFactoryExpectedCallsWhereReturnUnsupportedSubjectTypeErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory) {
-	cccf.
-		EXPECT().
-		Get(gomock.Any()).
-		Times(1).
-		Return(nil, errors.New("unsupported subject type"))
-}
-
-// This method set in factory cardContentMethod which expect any times to call all method of cardContentMethod
-func fetcherFactoryExpectedCallsWhereGetPictureReturnErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller, cccf *mock_fetcher.MockCardContentFactory) {
-	cardContentComponent := mock_fetcher.NewMockCardContent(ctrl)
-
-	cardContentComponent.
-		EXPECT().
-		GetSubjectType().
-		AnyTimes()
-
-	cardContentComponent.
-		EXPECT().
-		GetCardContent(gomock.Any(), flashcard.Subject, usingContext).
-		AnyTimes()
-
-	cccf.
-		EXPECT().
-		Get(models.SubjectType(flashcard.SubjectType)).
-		Times(1).
-		Return(cardContentComponent, nil)
-}
-
-func mockCardContentComponentFetchersForFlashcard(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetcher.MockCardContent {
-	cardContentComponent := mock_fetcher.NewMockCardContent(ctrl)
-
-	cardContentComponent.
-		EXPECT().
-		GetSubjectType().
-		Times(1).
-		Return(models.SubjectType(flashcard.SubjectType))
-
-	cardContentComponent.
-		EXPECT().
-		GetCardContent(gomock.Any(), flashcard.Subject, usingContext).
-		Times(1).
-		Return(&models.CardContent{
-			Paraphrase:    flashcard.Paraphrase,
-			Transcription: flashcard.Transcription,
-			Pronunciation: flashcard.Pronunciation,
-			Examples:      flashcard.Examples,
-			Synonyms:      flashcard.Synonyms,
-		}, nil)
-
-	return cardContentComponent
-}
-
-func mockCardContentComponentFetchersWithErr(flashcard *models.Flashcard, usingContext *[]string, ctrl *gomock.Controller) *mock_fetcher.MockCardContent {
-	cardContentComponent := mock_fetcher.NewMockCardContent(ctrl)
-
-	cardContentComponent.
-		EXPECT().
-		GetSubjectType().
-		Times(1).
-		Return(models.SubjectType(flashcard.SubjectType))
-
-	cardContentComponent.
-		EXPECT().
-		GetCardContent(gomock.Any(), flashcard.Subject, usingContext).
-		Times(1).
-		Return(nil, errors.New("error from card content fetcher"))
-
-	return cardContentComponent
+	creator := NewFlashcardCreator(slog.Default(), cc)
+	got, err := creator.Create(context.Background(), "deck", "subject", nil)
+	require.Nil(t, got)
+	assert.EqualError(t, err, "tts failed")
 }

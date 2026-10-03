@@ -9,9 +9,6 @@ import (
 	"sync"
 
 	"github.com/shredd0r/anki-card-creator/card/fetcher"
-	"github.com/shredd0r/anki-card-creator/config"
-	"github.com/shredd0r/anki-card-creator/duckduckgo"
-	"github.com/shredd0r/anki-card-creator/llm"
 	"github.com/shredd0r/anki-card-creator/models"
 	"github.com/shredd0r/anki-card-creator/utils"
 )
@@ -21,34 +18,20 @@ type Creator interface {
 }
 
 type implCreator struct {
-	pictureCfg              config.PictureConfig
-	logger                  *slog.Logger
-	llmProvider             llm.Provider
-	duckduckgoImageProvider duckduckgo.Image
-	cardContentFactory      fetcher.CardContentFactory
+	logger      *slog.Logger
+	cardContent fetcher.CardContent
 }
 
-func NewFlashcardCreator(pictureCfg config.PictureConfig, logger *slog.Logger,
-	llmProvider llm.Provider,
-	duckduckgoImageProvider duckduckgo.Image,
-	cardContentFactory fetcher.CardContentFactory) Creator {
+func NewFlashcardCreator(logger *slog.Logger, cardContent fetcher.CardContent) Creator {
 	return &implCreator{
-		pictureCfg:              pictureCfg,
-		logger:                  logger.WithGroup("flashcard-creator"),
-		duckduckgoImageProvider: duckduckgoImageProvider,
-		llmProvider:             llmProvider,
-		cardContentFactory:      cardContentFactory,
+		logger:      logger.WithGroup("flashcard-creator"),
+		cardContent: cardContent,
 	}
 }
 
 func (c *implCreator) Create(ctx context.Context, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
 	subjectType := utils.GetSubjectType(subject)
-	cardContentFetcher, err := c.cardContentFactory.Get(subjectType)
-	if err != nil {
-		return nil, err
-	}
-
-	return c.create(ctx, cardContentFetcher, deck, subject, usingContext)
+	return c.create(ctx, subjectType, deck, subject, usingContext)
 }
 
 type fetchTask struct {
@@ -56,13 +39,12 @@ type fetchTask struct {
 	callMethod func(ctx context.Context, subject string, usingContext *[]string) error
 }
 
-func (c *implCreator) create(ctx context.Context, cardContentFetcher fetcher.CardContent, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
+func (c *implCreator) create(ctx context.Context, subjectType models.SubjectType, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
 	c.logger.Debug("start create flashcard", slog.Any("subject", subject))
 
 	ctxForCreate, cancel := context.WithCancel(ctx)
 	wg := &sync.WaitGroup{}
 
-	subjectType := cardContentFetcher.GetSubjectType()
 	var cardContent *models.CardContent
 	var picture *models.File
 	var pronunciation *models.File
@@ -72,7 +54,7 @@ func (c *implCreator) create(ctx context.Context, cardContentFetcher fetcher.Car
 		{
 			fieldName: "card-content",
 			callMethod: func(ctx context.Context, subject string, usingContext *[]string) error {
-				respCardContent, err := cardContentFetcher.GetCardContent(ctx, subject, usingContext)
+				respCardContent, err := c.cardContent.GetCardContent(ctx, subject, usingContext)
 				cardContent = respCardContent
 				return err
 			},
@@ -80,7 +62,7 @@ func (c *implCreator) create(ctx context.Context, cardContentFetcher fetcher.Car
 		{
 			fieldName: "picture",
 			callMethod: func(ctx context.Context, subject string, usingContext *[]string) error {
-				respPicture, err := cardContentFetcher.GetPicture(ctx, subject, usingContext)
+				respPicture, err := c.cardContent.GetPicture(ctx, subject, usingContext)
 				picture = respPicture
 				return err
 			},
@@ -88,7 +70,7 @@ func (c *implCreator) create(ctx context.Context, cardContentFetcher fetcher.Car
 		{
 			fieldName: "pronunciation",
 			callMethod: func(ctx context.Context, subject string, usingContext *[]string) error {
-				respPronunciation, err := cardContentFetcher.GetPronunciation(ctx, subject)
+				respPronunciation, err := c.cardContent.GetPronunciation(ctx, subject)
 				pronunciation = respPronunciation
 				return err
 			},

@@ -2,7 +2,8 @@ VERSION=v1.0.0
 LDFLAGS=-X 'github.com/shredd0r/anki-card-creator/internal/version'
 
 
-install:
+lint:
+	
 	
 
 build-windows:

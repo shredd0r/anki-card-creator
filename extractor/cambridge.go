@@ -130,35 +130,45 @@ func (e *implCambridge) GetCard(ctx context.Context, subject string) (*Cambridge
 		pronunciation, errPronunciation = e.getPronunciation(ctx, subject, mainPageLocator)
 	}()
 
-	transcription, err := e.getTransacription(ctx, mainPageLocator)
-	if err != nil {
-		e.logger.Error("failed get transcription from parent locator", slog.Any("err", err.Error()))
-		return nil, err
+	// A single volume (transcription/explains/examples/pronunciation) failing
+	// to scrape - e.g. the page just doesn't have that element - no longer
+	// aborts the whole card: it's left at its zero value and the caller
+	// (card/fetcher.withDictionaryCardContent) falls back to AI for that
+	// specific field. Only gotoSubjectPage's error (subject not found,
+	// unsupported subject type, navigation failure) is a hard error here.
+	var transcription *string
+	if t, err := e.getTransacription(ctx, mainPageLocator); err != nil {
+		e.logger.Warn("failed get transcription from cambridge, falling back", slog.Any("err", err.Error()))
+	} else {
+		transcription = t
 	}
 
-	explains, err := e.getExplains(ctx, mainPageLocator)
-	if err != nil {
-		e.logger.Error("failed get explains from parent locator", slog.Any("err", err.Error()))
-		return nil, err
+	var explains []string
+	if expl, err := e.getExplains(ctx, mainPageLocator); err != nil {
+		e.logger.Warn("failed get explains from cambridge, falling back", slog.Any("err", err.Error()))
+	} else {
+		explains = *expl
 	}
 
-	examples, err := e.getExamples(ctx, mainPageLocator)
-	if err != nil {
-		e.logger.Error("failed get examples from parent locator", slog.Any("err", err.Error()))
-		return nil, err
+	var examples []string
+	if ex, err := e.getExamples(ctx, mainPageLocator); err != nil {
+		e.logger.Warn("failed get examples from cambridge, falling back", slog.Any("err", err.Error()))
+	} else {
+		examples = *ex
 	}
 
 	wg.Wait()
 	if errPronunciation != nil {
-		return nil, err
+		e.logger.Warn("failed get pronunciation from cambridge, falling back", slog.Any("err", errPronunciation.Error()))
+		pronunciation = nil
 	}
 
 	return &CambridgeCard{
 		Subject:       subject,
 		Transcription: transcription,
 		Pronunciation: pronunciation,
-		Explains:      *explains,
-		Examples:      *examples,
+		Explains:      explains,
+		Examples:      examples,
 	}, nil
 }
 

@@ -20,6 +20,7 @@ type GeminiConfig struct {
 }
 
 type LLMConfig struct {
+	OnlyAI  bool          `yaml:"only-ai"`  // true: skip Cambridge dictionary, generate everything via AI
 	Seed    int64         `yaml:"seed"`     // Seed for generating content
 	BaseUrl string        `yaml:"base-url"` // Url to server with launched model based on OpenAI APIes
 	Token   string        `yaml:"token"`    // Token for llm provider
@@ -30,6 +31,7 @@ type LLMConfig struct {
 type PictureConfig struct {
 	CountSearches uint8 `yaml:"count-searches"`
 	MinimalRating uint8 `yaml:"min-rating"`
+	Ignore        bool  `yaml:"ignore"` // true: skip picture search/rating entirely
 }
 
 type AnkiConnectConfig struct {

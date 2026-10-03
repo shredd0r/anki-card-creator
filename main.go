@@ -55,8 +55,14 @@ func main() {
 	// }
 	llmc := llm.NewMockClient(logger)
 	llmp := llm.NewProvider(llmc)
-	ccf := fetcher.NewCardContentFactory(cfg.Picture, logger, duckduckgoImageProvider, cambridgeExtractor, llmp, speech)
-	cc := card.NewFlashcardCreator(cfg.Picture, logger, llmp, duckduckgoImageProvider, ccf)
+
+	var cardContent fetcher.CardContent
+	if cfg.LLM.OnlyAI {
+		cardContent = fetcher.NewOnlyAICardContent(cfg.Picture, logger, duckduckgoImageProvider, llmp, speech)
+	} else {
+		cardContent = fetcher.NewWithDictionaryCardContent(cfg.Picture, logger, duckduckgoImageProvider, llmp, cambridgeExtractor, speech)
+	}
+	cc := card.NewFlashcardCreator(logger, cardContent)
 	te := extractor.NewTargetExtractor(logger)
 	s := service.NewAnkiCardCreator(*cfg, logger, as, cc)
 	targets, err := te.GetFromFile(ctx, "./word.json")
