@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/shredd0r/anki-card-creator/config"
-	mock_duckduckgo "github.com/shredd0r/anki-card-creator/duckduckgo/mock"
 	"github.com/shredd0r/anki-card-creator/extractor"
 	mock_extractor "github.com/shredd0r/anki-card-creator/extractor/mock"
+	mock_imagesearch "github.com/shredd0r/anki-card-creator/imagesearch/mock"
 	"github.com/shredd0r/anki-card-creator/llm"
 	mock_llm "github.com/shredd0r/anki-card-creator/llm/mock"
 	"github.com/shredd0r/anki-card-creator/models"
@@ -181,12 +181,12 @@ func TestOnlyAICardContent_GetCardContent_LLMError(t *testing.T) {
 
 func TestMediaFetcher_GetPicture_IgnoredWhenConfigured(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	gip := mock_duckduckgo.NewMockImage(ctrl) // no calls expected
+	gip := mock_imagesearch.NewMockImage(ctrl) // no calls expected
 
 	m := &mediaFetcher{
-		cfg:                     config.PictureConfig{Ignore: true},
-		logger:                  slog.Default(),
-		duckduckgoImageProvider: gip,
+		cfg:                 config.PictureConfig{Ignore: true},
+		logger:              slog.Default(),
+		imageSearchProvider: gip,
 	}
 
 	picture, err := m.GetPicture(context.Background(), "subject", nil)
@@ -196,8 +196,8 @@ func TestMediaFetcher_GetPicture_IgnoredWhenConfigured(t *testing.T) {
 
 func TestMediaFetcher_GetPicture_RetriesUntilRatingThresholdMet(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	gip := mock_duckduckgo.NewMockImage(ctrl)
-	res := mock_duckduckgo.NewMockResult(ctrl)
+	gip := mock_imagesearch.NewMockImage(ctrl)
+	res := mock_imagesearch.NewMockResult(ctrl)
 	lp := mock_llm.NewMockProvider(ctrl)
 
 	cfg := config.PictureConfig{CountSearches: 3, MinimalRating: 7}
@@ -210,7 +210,7 @@ func TestMediaFetcher_GetPicture_RetriesUntilRatingThresholdMet(t *testing.T) {
 	res.EXPECT().Get(gomock.Any(), "subject", uint(1)).Return(goodRated, nil)
 	lp.EXPECT().RatePicture(gomock.Any(), "subject", goodRated).Return(&llm.RatedPictureContent{Rating: 8}, nil)
 
-	m := &mediaFetcher{cfg: cfg, logger: slog.Default(), llmProvider: lp, duckduckgoImageProvider: gip}
+	m := &mediaFetcher{cfg: cfg, logger: slog.Default(), llmProvider: lp, imageSearchProvider: gip}
 
 	picture, err := m.GetPicture(context.Background(), "subject", nil)
 	require.NoError(t, err)
@@ -219,8 +219,8 @@ func TestMediaFetcher_GetPicture_RetriesUntilRatingThresholdMet(t *testing.T) {
 
 func TestMediaFetcher_GetPicture_ExhaustsAttemptsWithoutSuitablePicture(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	gip := mock_duckduckgo.NewMockImage(ctrl)
-	res := mock_duckduckgo.NewMockResult(ctrl)
+	gip := mock_imagesearch.NewMockImage(ctrl)
+	res := mock_imagesearch.NewMockResult(ctrl)
 	lp := mock_llm.NewMockProvider(ctrl)
 
 	cfg := config.PictureConfig{CountSearches: 2, MinimalRating: 7}
@@ -230,7 +230,7 @@ func TestMediaFetcher_GetPicture_ExhaustsAttemptsWithoutSuitablePicture(t *testi
 		lp.EXPECT().RatePicture(gomock.Any(), "subject", gomock.Any()).Return(&llm.RatedPictureContent{Rating: 3}, nil)
 	}
 
-	m := &mediaFetcher{cfg: cfg, logger: slog.Default(), llmProvider: lp, duckduckgoImageProvider: gip}
+	m := &mediaFetcher{cfg: cfg, logger: slog.Default(), llmProvider: lp, imageSearchProvider: gip}
 
 	picture, err := m.GetPicture(context.Background(), "subject", nil)
 	require.NoError(t, err)

@@ -11,8 +11,8 @@ import (
 	"sync"
 
 	"github.com/shredd0r/anki-card-creator/config"
-	"github.com/shredd0r/anki-card-creator/duckduckgo"
 	"github.com/shredd0r/anki-card-creator/extractor"
+	"github.com/shredd0r/anki-card-creator/imagesearch"
 	"github.com/shredd0r/anki-card-creator/llm"
 	"github.com/shredd0r/anki-card-creator/models"
 	"github.com/shredd0r/anki-card-creator/tts"
@@ -20,7 +20,7 @@ import (
 
 type CardContent interface {
 	GetCardContent(ctx context.Context, subject string, usingContext *[]string) (*models.CardContent, error)
-	// Method for rating pictures gotten from duckduckgo image
+	// Method for rating pictures gotten from the image search provider
 	GetPicture(ctx context.Context, subject string, usingContext *[]string) (*models.File, error)
 	GetPronunciation(ctx context.Context, subject string) (*models.File, error)
 }
@@ -29,11 +29,11 @@ type CardContent interface {
 // logic shared identically by both scenarios (withDictionaryCardContent and
 // onlyAICardContent embed it) so it isn't duplicated.
 type mediaFetcher struct {
-	cfg                     config.PictureConfig
-	logger                  *slog.Logger
-	speech                  tts.Speech
-	llmProvider             llm.Provider
-	duckduckgoImageProvider duckduckgo.Image
+	cfg                 config.PictureConfig
+	logger              *slog.Logger
+	speech              tts.Speech
+	llmProvider         llm.Provider
+	imageSearchProvider imagesearch.Image
 }
 
 func (m *mediaFetcher) GetPicture(ctx context.Context, subject string, usingContext *[]string) (*models.File, error) {
@@ -49,7 +49,7 @@ func (m *mediaFetcher) GetPicture(ctx context.Context, subject string, usingCont
 		query = fmt.Sprintf("%s %s", subject, strings.Join(*usingContext, ", "))
 	}
 
-	queryPageProvider, err := m.duckduckgoImageProvider.Request(ctx, query)
+	queryPageProvider, err := m.imageSearchProvider.Request(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -111,14 +111,14 @@ type withDictionaryCardContent struct {
 	cambridgeExtractor extractor.Cambridge
 }
 
-func NewWithDictionaryCardContent(cfg config.PictureConfig, logger *slog.Logger, duckduckgoImageProvider duckduckgo.Image, llmProvider llm.Provider, cambridgeExtractor extractor.Cambridge, speech tts.Speech) CardContent {
+func NewWithDictionaryCardContent(cfg config.PictureConfig, logger *slog.Logger, imageSearchProvider imagesearch.Image, llmProvider llm.Provider, cambridgeExtractor extractor.Cambridge, speech tts.Speech) CardContent {
 	return &withDictionaryCardContent{
 		mediaFetcher: mediaFetcher{
-			cfg:                     cfg,
-			logger:                  logger.WithGroup("with-dictionary-card-content"),
-			speech:                  speech,
-			llmProvider:             llmProvider,
-			duckduckgoImageProvider: duckduckgoImageProvider,
+			cfg:                 cfg,
+			logger:              logger.WithGroup("with-dictionary-card-content"),
+			speech:              speech,
+			llmProvider:         llmProvider,
+			imageSearchProvider: imageSearchProvider,
 		},
 		cambridgeExtractor: cambridgeExtractor,
 	}
@@ -191,14 +191,14 @@ type onlyAICardContent struct {
 	mediaFetcher
 }
 
-func NewOnlyAICardContent(cfg config.PictureConfig, logger *slog.Logger, duckduckgoImageProvider duckduckgo.Image, llmProvider llm.Provider, speech tts.Speech) CardContent {
+func NewOnlyAICardContent(cfg config.PictureConfig, logger *slog.Logger, imageSearchProvider imagesearch.Image, llmProvider llm.Provider, speech tts.Speech) CardContent {
 	return &onlyAICardContent{
 		mediaFetcher: mediaFetcher{
-			cfg:                     cfg,
-			logger:                  logger.WithGroup("only-ai-card-content"),
-			speech:                  speech,
-			llmProvider:             llmProvider,
-			duckduckgoImageProvider: duckduckgoImageProvider,
+			cfg:                 cfg,
+			logger:              logger.WithGroup("only-ai-card-content"),
+			speech:              speech,
+			llmProvider:         llmProvider,
+			imageSearchProvider: imageSearchProvider,
 		},
 	}
 }

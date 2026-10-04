@@ -1,7 +1,5 @@
 package duckduckgo
 
-//go:generate mockgen -source image.go -destination mock/image_mock.go
-
 import (
 	"context"
 	"errors"
@@ -11,6 +9,7 @@ import (
 
 	"github.com/mxschmitt/playwright-go"
 	"github.com/shredd0r/anki-card-creator/downloader"
+	"github.com/shredd0r/anki-card-creator/imagesearch"
 	"github.com/shredd0r/anki-card-creator/models"
 )
 
@@ -22,18 +21,7 @@ const (
 
 var errIndexOutOfRange = errors.New("index out of range")
 
-// Image - interface for access to make request to searching image by query
-type Image interface {
-	// Request - create struct where you can sort through images on page
-	Request(ctx context.Context, searchQuery string) (Result, error)
-}
-
-type Result interface {
-	// Get - return image from opened web page
-	Get(ctx context.Context, filenameWithoutType string, numOfPicture uint) (*models.File, error)
-}
-
-func NewImageProvider(logger *slog.Logger, browser playwright.Browser, fileDownloader downloader.File) Image {
+func NewImage(logger *slog.Logger, browser playwright.Browser, fileDownloader downloader.File) imagesearch.Image {
 	return &implImage{
 		logger:         logger.WithGroup("duckduckgo-image-provider"),
 		browser:        browser,
@@ -53,7 +41,7 @@ type implResult struct {
 	fileDownloader downloader.File
 }
 
-func (p *implImage) Request(ctx context.Context, searchQuery string) (Result, error) {
+func (p *implImage) Request(ctx context.Context, searchQuery string) (imagesearch.Result, error) {
 	page, err := p.moveToPageWithImages(searchQuery)
 	if err != nil {
 		return nil, err

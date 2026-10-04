@@ -20,7 +20,8 @@ RULES:
 - Every example MUST contain the subject or an inflected/changed form of it.
 - The subject in every example MUST be wrapped in <b>...</b>.
 - If the subject changes form, the changed form must also be wrapped in <b>...</b>.
-- All generated text should be in lowercase but taking spelling into account. 
+- All generated text should be in lowercase but taking spelling into account.
+- The subject itself must be treated as lowercase, except for proper nouns, which keep their standard capitalization.
 - Example:
   subject = "apple"
   valid = "I ate two <b>apples</b>."

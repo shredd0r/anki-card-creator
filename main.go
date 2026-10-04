@@ -35,8 +35,7 @@ func main() {
 	defer br.Close()
 
 	fileDownloader := downloader.NewFile(logger)
-	duckduckgoImageProvider := duckduckgo.NewImageProvider(logger, br, fileDownloader)
-	cambridgeExtractor := extractor.NewCambridge(logger, br, fileDownloader)
+	imageSearchProvider := duckduckgo.NewImage(logger, br, fileDownloader)
 	speech := tts.NewGoogleSpeech(logger, tts.LanguageEnglishUK)
 
 	as, err := anki.NewService(ctx, logger, cfg.AnkiConnect)
@@ -48,20 +47,14 @@ func main() {
 	// NOTE: real LLM client call kept below but commented out, in favor of
 	// the mock client, so the pipeline can be exercised end-to-end without a
 	// live LLM server running.
-	// llmc, err := llm.NewOpenAIClient(logger, cfg.LLM)
-	// if err != nil {
-	// 	logger.Error("failed to create llm client", slog.Any("err", err))
-	// 	return
-	// }
-	llmc := llm.NewMockClient(logger)
+	llmc, err := llm.NewOpenAIClient(logger, cfg.LLM)
+	if err != nil {
+		logger.Error("failed to create llm client", slog.Any("err", err))
+		return
+	}
 	llmp := llm.NewProvider(llmc)
 
-	var cardContent fetcher.CardContent
-	if cfg.LLM.OnlyAI {
-		cardContent = fetcher.NewOnlyAICardContent(cfg.Picture, logger, duckduckgoImageProvider, llmp, speech)
-	} else {
-		cardContent = fetcher.NewWithDictionaryCardContent(cfg.Picture, logger, duckduckgoImageProvider, llmp, cambridgeExtractor, speech)
-	}
+	cardContent := fetcher.NewOnlyAICardContent(cfg.Picture, logger, imageSearchProvider, llmp, speech)
 	cc := card.NewFlashcardCreator(logger, cardContent)
 	te := extractor.NewTargetExtractor(logger)
 	s := service.NewAnkiCardCreator(*cfg, logger, as, cc)
