@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/mxschmitt/playwright-go"
 	"github.com/shredd0r/anki-card-creator/anki"
 	"github.com/shredd0r/anki-card-creator/browser"
 	"github.com/shredd0r/anki-card-creator/card"
@@ -27,7 +28,11 @@ func main() {
 		return
 	}
 
-	br, err := browser.LaunchFirefox()
+	br, err := browser.LaunchFirefox(
+		playwright.BrowserTypeLaunchOptions{
+			Headless: playwright.Bool(false),
+		},
+	)
 	if err != nil {
 		logger.Error("failed to launch browser", slog.Any("err", err))
 		return
@@ -44,14 +49,13 @@ func main() {
 		return
 	}
 
-	// NOTE: real LLM client call kept below but commented out, in favor of
-	// the mock client, so the pipeline can be exercised end-to-end without a
-	// live LLM server running.
-	llmc, err := llm.NewOpenAIClient(logger, cfg.LLM)
-	if err != nil {
-		logger.Error("failed to create llm client", slog.Any("err", err))
-		return
-	}
+	llmc := llm.NewMockClient(logger)
+
+	// llmc, err := llm.NewOpenAIClient(logger, cfg.LLM)
+	// if err != nil {
+	// 	logger.Error("failed to create llm client", slog.Any("err", err))
+	// 	return
+	// }
 	llmp := llm.NewProvider(llmc)
 
 	cardContent := fetcher.NewOnlyAICardContent(cfg.Picture, logger, imageSearchProvider, llmp, speech)

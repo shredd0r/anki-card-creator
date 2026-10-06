@@ -15,8 +15,8 @@ import (
 
 const (
 	image_search_url               = "https://duckduckgo.com/?q=%s&iax=images&ia=images"
-	selector_for_matched_image     = "img.tile--img__img"
-	selector_for_detail_view_image = "img.detail__media__img-highres"
+	selector_for_matched_image     = "figure>div>img"
+	selector_for_detail_view_image = "a>div>img"
 )
 
 var errIndexOutOfRange = errors.New("index out of range")
@@ -115,11 +115,13 @@ func (p *implImage) moveToPageWithImages(search string) (playwright.Page, error)
 
 func (p *implResult) getUrlToImage(page playwright.Page) (string, error) {
 	imgViewLocator := page.Locator(selector_for_detail_view_image).First()
-	imgUrl, err := imgViewLocator.GetAttribute("src")
+	imgUrlWithoutProtocol, err := imgViewLocator.GetAttribute("src")
 	if err != nil {
 		p.logger.Error("failed get url to image from image detail locator", slog.Any("err", err.Error()))
 		return "", err
 	}
+
+	imgUrl := fmt.Sprintf("https:%s", imgUrlWithoutProtocol)
 
 	return imgUrl, nil
 }
