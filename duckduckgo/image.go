@@ -57,17 +57,13 @@ func (p *implImage) Request(ctx context.Context, searchQuery string) (imagesearc
 // Get - method for getting picture from DuckDuckGo Images. Picture returns as buffer reader, not saving in disk
 // numOfPicture - index for getting picture from list of matched pictures
 func (p *implResult) Get(ctx context.Context, filenameWithoutType string, numOfPicture uint) (*models.File, error) {
-	defer func() {
-		if err := p.page.Close(); err != nil {
-			p.logger.Error("failed close page with duckduckgo image site", slog.Any("err", err.Error()))
-		}
-	}()
-
 	matchedImgLocators, err := p.page.Locator(selector_for_matched_image).All()
 	if err != nil {
 		p.logger.Error("failed get images from duckduckgo page", slog.Any("err", err.Error()))
 		return nil, err
 	}
+
+	p.logger.Debug("count of matched images", slog.Any("count", len(matchedImgLocators)))
 
 	if int(numOfPicture) >= len(matchedImgLocators) {
 		p.logger.Error("number of picture out of range array images")
@@ -88,6 +84,15 @@ func (p *implResult) Get(ctx context.Context, filenameWithoutType string, numOfP
 	}
 
 	return p.fileDownloader.Download(ctx, filenameWithoutType, imgUrl)
+}
+
+func (p *implResult) Close() error {
+	if err := p.page.Close(); err != nil {
+		p.logger.Error("failed close page with duckduckgo image site", slog.Any("err", err.Error()))
+		return err
+	}
+
+	return nil
 }
 
 func (p *implImage) moveToPageWithImages(search string) (playwright.Page, error) {

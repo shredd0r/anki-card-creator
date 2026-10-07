@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -53,6 +54,8 @@ func (m *mediaFetcher) GetPicture(ctx context.Context, subject string, usingCont
 	if err != nil {
 		return nil, err
 	}
+
+	defer queryPageProvider.Close()
 
 	for attempt := range m.cfg.CountSearches {
 		m.logger.Debug(fmt.Sprintf("attempt: %d for getting picture for subject: %s", attempt, subject))
@@ -125,7 +128,7 @@ func NewWithDictionaryCardContent(cfg config.PictureConfig, logger *slog.Logger,
 }
 
 func (wf *withDictionaryCardContent) GetCardContent(ctx context.Context, subject string, usingContext *[]string) (*models.CardContent, error) {
-	wf.logger.Debug("start get card content with dictionary")
+	wf.logger.Debug("get card content with dictionary")
 
 	var cambridgeCard *extractor.CambridgeCard
 	var cambridgeErr error
@@ -204,13 +207,14 @@ func NewOnlyAICardContent(cfg config.PictureConfig, logger *slog.Logger, imageSe
 }
 
 func (of *onlyAICardContent) GetCardContent(ctx context.Context, subject string, usingContext *[]string) (*models.CardContent, error) {
-	of.logger.Debug("start get card content with only ai")
+	of.logger.Debug("get card content with only ai")
 
 	generatedCardContent, err := of.llmProvider.GenerateCardContent(ctx, subject, usingContext)
 	if err != nil {
 		return nil, err
 	}
 
+	of.logger.Debug("card content by ai received")
 	return &models.CardContent{
 		Paraphrase:    generatedCardContent.Paraphrase,
 		Transcription: generatedCardContent.Transcription,

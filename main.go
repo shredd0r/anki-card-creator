@@ -49,14 +49,13 @@ func main() {
 		return
 	}
 
-	llmc := llm.NewMockClient(logger)
-
-	// llmc, err := llm.NewOpenAIClient(logger, cfg.LLM)
-	// if err != nil {
-	// 	logger.Error("failed to create llm client", slog.Any("err", err))
-	// 	return
-	// }
-	llmp := llm.NewProvider(llmc)
+	// llmc := llm.NewMockClient(logger)
+	llmc, err := llm.NewOpenAIClient(logger, cfg.LLM)
+	if err != nil {
+		logger.Error("failed to create llm client", slog.Any("err", err))
+		return
+	}
+	llmp := llm.NewProvider(llmc, 1)
 
 	cardContent := fetcher.NewOnlyAICardContent(cfg.Picture, logger, imageSearchProvider, llmp, speech)
 	cc := card.NewFlashcardCreator(logger, cardContent)

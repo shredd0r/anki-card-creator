@@ -40,7 +40,7 @@ type fetchTask struct {
 }
 
 func (c *implCreator) create(ctx context.Context, subjectType models.SubjectType, deck string, subject string, usingContext *[]string) (*models.Flashcard, error) {
-	c.logger.Debug("start create flashcard", slog.Any("subject", subject))
+	c.logger.Debug("create flashcard", slog.Any("subject", subject))
 
 	ctxForCreate, cancel := context.WithCancel(ctx)
 	wg := &sync.WaitGroup{}
@@ -93,7 +93,7 @@ func (c *implCreator) create(ctx context.Context, subjectType models.SubjectType
 		}()
 	}
 
-	c.logger.Debug("start waiting for complete all card content fetcher goroutines")
+	c.logger.Debug("waiting for complete all card content fetcher goroutines")
 	wg.Wait()
 	cancel()
 	if len(chanForErr) != 0 {

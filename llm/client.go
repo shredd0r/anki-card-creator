@@ -83,16 +83,16 @@ func (p *implClient) RatePicture(ctx context.Context, subject string, base64Pict
 }
 
 func (p *implClient) HealthCheck(ctx context.Context) error {
-	_, err := p.healthCheckLLM.GenerateContent(ctx, []llms.MessageContent{
+	_, err := p.chatCompletionRequest(ctx, p.healthCheckLLM, []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeHuman, "Healthcheck"),
-	}, llms.WithSeed(p.seed))
+	})
 	return err
 }
 
 func (p *implClient) chatCompletionRequest(ctx context.Context, model llms.Model, messages []llms.MessageContent) (*[]byte, error) {
 	resp, err := model.GenerateContent(ctx, messages, llms.WithSeed(p.seed))
 	if err != nil {
-		p.logger.Error("received error response from OpenAI server", "err", err)
+		p.logger.Error("received error response from llm server", "err", err)
 		return nil, err
 	}
 
@@ -102,5 +102,6 @@ func (p *implClient) chatCompletionRequest(ctx context.Context, model llms.Model
 	}
 
 	outputText := []byte(resp.Choices[0].Content)
+	p.logger.Debug("raw llm response", slog.String("content", string(outputText)))
 	return &outputText, nil
 }

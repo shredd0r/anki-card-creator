@@ -17,4 +17,6 @@ type Image interface {
 type Result interface {
 	// Get - return image from opened web page
 	Get(ctx context.Context, filenameWithoutType string, numOfPicture uint) (*models.File, error)
+	// Close - close session for getting image
+	Close() error
 }

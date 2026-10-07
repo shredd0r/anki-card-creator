@@ -28,12 +28,14 @@ type Provider interface {
 }
 
 type implProvider struct {
-	client Client
+	parallelRequest chan bool
+	client          Client
 }
 
-func NewProvider(client Client) Provider {
+func NewProvider(client Client, countParallel int) Provider {
 	return &implProvider{
-		client: client,
+		client:          client,
+		parallelRequest: make(chan bool, countParallel),
 	}
 }
 
@@ -41,13 +43,15 @@ func (p *implProvider) GenerateCardContent(ctx context.Context, subject string, 
 	return callClientAndUnmarshalResponse[GeneratedCardContent](
 		func() (*[]byte, error) {
 			return p.client.GenerateCardContent(ctx, getPromptRequestBy(subject, usingContext))
-		})
+		},
+		&p.parallelRequest)
 }
 func (p *implProvider) RatePicture(ctx context.Context, subject string, picture *models.File) (*RatedPictureContent, error) {
 	return callClientAndUnmarshalResponse[RatedPictureContent](
 		func() (*[]byte, error) {
 			return p.client.RatePicture(ctx, subject, base64.StdEncoding.EncodeToString(picture.Content), picture.MIMEType)
-		})
+		},
+		&p.parallelRequest)
 }
 
 func (p *implProvider) HealthCheck(ctx context.Context) error {
@@ -56,7 +60,10 @@ func (p *implProvider) HealthCheck(ctx context.Context) error {
 
 type methodClientCall func() (*[]byte, error)
 
-func callClientAndUnmarshalResponse[T any](method methodClientCall) (*T, error) {
+func callClientAndUnmarshalResponse[T any](method methodClientCall, parallelChan *chan bool) (*T, error) {
+	*parallelChan <- true
+	defer func() { <-*parallelChan }()
+
 	resp, err := method()
 
 	if err != nil {

@@ -57,7 +57,7 @@ func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashc
 	ctx, cancel := s.withTimeout(ctx)
 	defer cancel()
 
-	s.logger.Info("start adding flashcard to deck", slog.Any("deck", flashcard.DeckName), slog.Any("subject", flashcard.Subject))
+	s.logger.Info("adding flashcard to deck", slog.Any("deck", flashcard.DeckName), slog.Any("subject", flashcard.Subject))
 
 	if err := s.ensureDeck(ctx, flashcard.DeckName); err != nil {
 		return fmt.Errorf("ensure deck %q: %w", flashcard.DeckName, err)

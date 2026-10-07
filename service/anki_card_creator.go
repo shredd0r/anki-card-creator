@@ -40,7 +40,7 @@ func NewAnkiCardCreator(cfg config.Config, logger *slog.Logger, ankiService anki
 }
 
 func (c *AnkiCardCreator) Create(ctx context.Context, targets *[]extractor.TargetInfo) error {
-	c.logger.Info("start creating flashcard and store it in anki")
+	c.logger.Info("creating flashcard and store it in anki")
 
 	// chanErr is sized so that every goroutine that might send to it (one per
 	// subject, plus the single AddFlashcard consumer) can always do so
@@ -89,7 +89,7 @@ func (c *AnkiCardCreator) createAllFlashcards(ctxWithCancel context.Context, can
 				chanQueue <- struct{}{}
 
 				current := indexSubject.Add(1)
-				c.logger.Info("start creating flashcard", slog.String("subject", subject), slog.Int64("current", current), slog.Int("total", count))
+				c.logger.Info("creating flashcard", slog.String("subject", subject), slog.Int64("current", current), slog.Int("total", count))
 
 				flashcard, err := c.cardCreator.Create(ctxWithCancel, target.DeckName, subject, target.Tags)
 				if err != nil {

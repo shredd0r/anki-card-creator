@@ -70,7 +70,7 @@ func (e *implCambridge) GetExplains(ctx context.Context, subject string) (*[]str
 		}
 	default:
 		{
-			e.logger.Debug(fmt.Sprintf("start get card for subject: %s", subject))
+			e.logger.Debug(fmt.Sprintf("get card for subject: %s", subject))
 
 			page, err := e.gotoSubjectPage(ctx, subject)
 			if err != nil {
@@ -92,7 +92,7 @@ func (e *implCambridge) GetTransacription(ctx context.Context, subject string) (
 		}
 	default:
 		{
-			e.logger.Debug(fmt.Sprintf("start get card for subject: %s", subject))
+			e.logger.Debug(fmt.Sprintf("get card for subject: %s", subject))
 
 			page, err := e.gotoSubjectPage(ctx, subject)
 			if err != nil {
@@ -106,7 +106,7 @@ func (e *implCambridge) GetTransacription(ctx context.Context, subject string) (
 }
 
 func (e *implCambridge) GetCard(ctx context.Context, subject string) (*CambridgeCard, error) {
-	e.logger.Debug(fmt.Sprintf("start get card for subject: %s", subject))
+	e.logger.Debug(fmt.Sprintf("get card for subject: %s", subject))
 
 	subjectType := utils.GetSubjectType(subject)
 	if subjectType != models.SubjectTypeWord {
@@ -193,7 +193,7 @@ func (e *implCambridge) gotoSubjectPage(ctx context.Context, subject string) (pl
 		}
 	default:
 		{
-			e.logger.Debug(fmt.Sprintf("start go to dictionary page for subject: %s", subject))
+			e.logger.Debug(fmt.Sprintf("go to dictionary page for subject: %s", subject))
 			page, err := e.browser.NewPage()
 			if err != nil {
 				e.logger.Error("failed create new page for cambridge dictionary", slog.Any("err", err.Error()))
@@ -238,7 +238,7 @@ func (e *implCambridge) gotoSubjectPage(ctx context.Context, subject string) (pl
 }
 
 func (e *implCambridge) getTransacription(ctx context.Context, mainPageLocator playwright.Locator) (*string, error) {
-	e.logger.Debug("start get transcription from cambridge page")
+	e.logger.Debug("get transcription from cambridge page")
 	select {
 	case <-ctx.Done():
 		{
@@ -259,12 +259,12 @@ func (e *implCambridge) getTransacription(ctx context.Context, mainPageLocator p
 }
 
 func (e *implCambridge) getExplains(ctx context.Context, mainPageLocator playwright.Locator) (*[]string, error) {
-	e.logger.Debug("start get explains from cambridge page")
+	e.logger.Debug("get explains from cambridge page")
 	return e.getAllStringsBySelector(ctx, mainPageLocator, selector_for_explain_cambridge, 3)
 }
 
 func (e *implCambridge) getExamples(ctx context.Context, mainPageLocator playwright.Locator) (*[]string, error) {
-	e.logger.Debug("start get examples from cambridge page")
+	e.logger.Debug("get examples from cambridge page")
 	return e.getAllStringsBySelector(ctx, mainPageLocator, selector_for_example_cambridge, 5)
 }
 

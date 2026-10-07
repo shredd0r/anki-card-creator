@@ -33,7 +33,7 @@ func NewFile(logger *slog.Logger) File {
 
 // Download - method for downloading file by url, using http requests.
 func (d *implFile) Download(ctx context.Context, nameWithoutType string, urlToFile string) (*models.File, error) {
-	d.logger.Debug("start download file", slog.Any("url", urlToFile))
+	d.logger.Debug("download file", slog.Any("url", urlToFile))
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, urlToFile, nil)
 	if err != nil {
@@ -78,7 +78,7 @@ func (d *implFile) Download(ctx context.Context, nameWithoutType string, urlToFi
 }
 
 func (d *implFile) getMIMEType(responseHeader http.Header) string {
-	d.logger.Debug("start getting type from content-type")
+	d.logger.Debug("getting type from content-type")
 	contentType := responseHeader.Get("content-type")
 	d.logger.Debug("received content type", slog.Any("content-type", contentType))
 
@@ -86,7 +86,7 @@ func (d *implFile) getMIMEType(responseHeader http.Header) string {
 }
 
 func (d *implFile) getFileType(MIMEType string) (string, error) {
-	d.logger.Debug("start getting type from MIMEType")
+	d.logger.Debug("getting type from MIMEType")
 
 	// I use regex, because if image is svg, content-type is 'image/svg+html'
 	// I need just type of file, in this case - 'svg'
