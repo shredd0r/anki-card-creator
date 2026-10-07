@@ -103,6 +103,28 @@ func (m *mediaFetcher) GetPronunciation(ctx context.Context, subject string) (*m
 	}, nil
 }
 
+// examplesFromLLM converts the LLM's examples (which carry the exact
+// subject form used, enabling precise highlighting even for irregular
+// inflections like "go" -> "went") into models.Example.
+func examplesFromLLM(examples []llm.Example) []models.Example {
+	converted := make([]models.Example, len(examples))
+	for i, example := range examples {
+		converted[i] = models.Example{Sentence: example.Sentence, SubjectForm: example.SubjectForm}
+	}
+	return converted
+}
+
+// examplesFromPlainText converts examples with no known subject form - e.g.
+// Cambridge Dictionary's, which are scraped as plain sentences - into
+// models.Example. Formatting falls back to a best-effort guess for these.
+func examplesFromPlainText(examples []string) []models.Example {
+	converted := make([]models.Example, len(examples))
+	for i, example := range examples {
+		converted[i] = models.Example{Sentence: example}
+	}
+	return converted
+}
+
 // withDictionaryCardContent tries Cambridge Dictionary first for paraphrase,
 // transcription and examples, falling back to AI generation per-field for
 // whatever Cambridge doesn't have (including entirely, e.g. for a
@@ -167,9 +189,9 @@ func (wf *withDictionaryCardContent) GetCardContent(ctx context.Context, subject
 		transcription = cambridgeCard.Transcription
 	}
 
-	examples := generatedCardContent.Examples
+	examples := examplesFromLLM(generatedCardContent.Examples)
 	if cambridgeCard != nil && len(cambridgeCard.Examples) > 0 {
-		examples = cambridgeCard.Examples
+		examples = examplesFromPlainText(cambridgeCard.Examples)
 	}
 
 	var pronunciation *models.File
@@ -218,7 +240,7 @@ func (of *onlyAICardContent) GetCardContent(ctx context.Context, subject string,
 		Paraphrase:    generatedCardContent.Paraphrase,
 		Transcription: generatedCardContent.Transcription,
 		Pronunciation: nil, // comes from GetPronunciation (TTS) instead
-		Examples:      generatedCardContent.Examples,
+		Examples:      examplesFromLLM(generatedCardContent.Examples),
 		Synonyms:      generatedCardContent.Synonyms,
 	}, nil
 }

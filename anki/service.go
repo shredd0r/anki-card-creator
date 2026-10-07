@@ -32,6 +32,7 @@ type implService struct {
 	modelName string
 	cfg       config.AnkiConnectConfig
 	decks     map[string]struct{}
+	fields    fieldFormatter
 }
 
 // NewService connects to AnkiConnect and ensures the note type (fields,
@@ -69,7 +70,7 @@ func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashc
 		if err != nil {
 			return fmt.Errorf("store picture media: %w", err)
 		}
-		pictureField = s.formatPictureField(storedName)
+		pictureField = s.fields.Picture(storedName)
 	}
 
 	pronunciationField := ""
@@ -91,9 +92,9 @@ func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashc
 		"Pronunciation": pronunciationField,
 		"Transcription": transcription,
 		"Paraphrase":    flashcard.Paraphrase,
-		"Synonyms":      s.formatSynonymsField(flashcard),
+		"Synonyms":      s.fields.Synonyms(flashcard.Synonyms),
 		"Picture":       pictureField,
-		"Example":       s.formatExampleField(flashcard),
+		"Example":       s.fields.Example(flashcard.Subject, flashcard.Examples),
 	}
 	tags := append(flashcard.Tags, default_tag)
 
@@ -197,33 +198,4 @@ func (s *implService) upsertNote(ctx context.Context, deckName string, subject s
 		return fmt.Errorf("add note: %w", err)
 	}
 	return nil
-}
-
-// Flashcard in anki expect example string like that:
-// <ul>
-//
-//	<li>The lime is sour.</li>
-//	<li>We have a lime tree.</li>
-//	<li>Cut the lime in half.</li>
-//
-// </ul>
-func (s *implService) formatExampleField(flashcard *models.Flashcard) string {
-	formatExamples := "<ul>%s</ul>"
-
-	examples := ""
-	for _, example := range flashcard.Examples {
-		examples += fmt.Sprintf("<li>%s</li>", example)
-	}
-
-	s.logger.Debug("formatted examples field", slog.String("examples", examples))
-
-	return fmt.Sprintf(formatExamples, examples)
-}
-
-func (s *implService) formatPictureField(filename string) string {
-	return fmt.Sprintf("<img src='%s'>", filename)
-}
-
-func (s *implService) formatSynonymsField(flashcard *models.Flashcard) string {
-	return strings.Join(flashcard.Synonyms, ", ")
 }

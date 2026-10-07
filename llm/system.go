@@ -12,7 +12,7 @@ OUTPUT (JSON object with exactly these 4 fields, nothing else, no markdown fence
 {
   "paraphrase": string,
   "transcription": string,
-  "examples": string[3..5],
+  "examples": [{ "sentence": string, "subject_form": string }, ...] (3 to 5 items),
   "synonyms": string[3..5]
 }
 
@@ -27,16 +27,16 @@ OUTPUT (JSON object with exactly these 4 fields, nothing else, no markdown fence
   subject = "stay away from" -> ""
 
 ===== examples =====
-Write 3 to 5 example sentences. Build EACH sentence using this exact procedure, in order:
+Write 3 to 5 example entries. Build EACH entry using this exact procedure, in order:
 1. Think of one natural, everyday situation.
-2. Write one simple, grammatically correct English sentence about that situation.
-3. The sentence MUST use the subject itself, or a naturally inflected/changed form of it (e.g. plural, past tense, -ing form).
+2. Write one simple, grammatically correct English sentence about that situation - this is "sentence".
+3. The sentence MUST use the subject itself, or a naturally inflected/changed form of it (e.g. plural, past tense, -ing form, or an irregular form such as "go" -> "went").
 4. Write the sentence as plain text - no markup, no tags, no formatting of any kind.
-5. Lowercase the whole sentence, except proper nouns.
-6. The subject in every example MUST be wrapped in <b>...</b>.
+5. Set "subject_form" to the exact word or phrase you used to satisfy rule 3, copied verbatim (same spelling and case) from "sentence".
 
-An example sentence is invalid if it is empty or if it is missing the subject. Never output "" as an example - every one of the 3-5 entries must be a complete sentence.
-  subject = "apple" -> "i ate two <b>apples'</b> for lunch."
+An example entry is invalid if "sentence" is empty or missing the subject, or if "subject_form" is empty or does not appear verbatim inside "sentence". Never output "" for either field - every one of the 3-5 entries must be complete.
+  subject = "apple" -> { "sentence": "i ate two apples for lunch.", "subject_form": "apples" }
+  subject = "go" -> { "sentence": "i went to the store yesterday.", "subject_form": "went" }
 
 ===== synonyms =====
 - 3 to 5 single words or short phrases that are synonyms of the subject.
@@ -44,7 +44,6 @@ An example sentence is invalid if it is empty or if it is missing the subject. N
 - Never output "" as a synonym - every one of the 3-5 entries must be a real word or phrase.
 
 ===== general rules =====
-- All text must be lowercase, except proper nouns.
 - Every string you output must be fully written and non-empty. If a rule above seems hard to satisfy for a given entry, write the simplest entry that still follows all the rules - never leave an entry blank.
 - Return ONLY the JSON object described above.
 `

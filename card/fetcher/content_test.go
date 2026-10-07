@@ -38,7 +38,7 @@ func TestWithDictionaryCardContent_GetCardContent_FullCambridgeSuccess(t *testin
 	lp.EXPECT().GenerateCardContent(gomock.Any(), "word", (*[]string)(nil)).Return(&llm.GeneratedCardContent{
 		Paraphrase:    "ai-paraphrase-should-be-ignored",
 		Transcription: nil,
-		Examples:      []string{"ai-example-should-be-ignored"},
+		Examples:      []llm.Example{{Sentence: "ai-example-should-be-ignored"}},
 		Synonyms:      []string{"ai-synonym-1", "ai-synonym-2"},
 	}, nil)
 
@@ -52,7 +52,7 @@ func TestWithDictionaryCardContent_GetCardContent_FullCambridgeSuccess(t *testin
 	assert.Equal(t, "cambridge-paraphrase", got.Paraphrase)
 	assert.Equal(t, &transcription, got.Transcription)
 	assert.Equal(t, pronunciation, got.Pronunciation)
-	assert.Equal(t, []string{"cambridge-example-1", "cambridge-example-2"}, got.Examples)
+	assert.Equal(t, []models.Example{{Sentence: "cambridge-example-1"}, {Sentence: "cambridge-example-2"}}, got.Examples)
 	// Synonyms always come from AI - Cambridge has no synonym data.
 	assert.Equal(t, []string{"ai-synonym-1", "ai-synonym-2"}, got.Synonyms)
 }
@@ -75,7 +75,7 @@ func TestWithDictionaryCardContent_GetCardContent_PerFieldFallback(t *testing.T)
 	lp.EXPECT().GenerateCardContent(gomock.Any(), "word", (*[]string)(nil)).Return(&llm.GeneratedCardContent{
 		Paraphrase:    "ai-paraphrase",
 		Transcription: &aiTranscription,
-		Examples:      []string{"ai-example"},
+		Examples:      []llm.Example{{Sentence: "ai-example"}},
 		Synonyms:      []string{"ai-synonym"},
 	}, nil)
 
@@ -89,7 +89,7 @@ func TestWithDictionaryCardContent_GetCardContent_PerFieldFallback(t *testing.T)
 	assert.Equal(t, "ai-paraphrase", got.Paraphrase)
 	assert.Equal(t, &aiTranscription, got.Transcription)
 	assert.Nil(t, got.Pronunciation)
-	assert.Equal(t, []string{"ai-example"}, got.Examples)
+	assert.Equal(t, []models.Example{{Sentence: "ai-example"}}, got.Examples)
 	assert.Equal(t, []string{"ai-synonym"}, got.Synonyms)
 }
 
@@ -104,7 +104,7 @@ func TestWithDictionaryCardContent_GetCardContent_CambridgeHardErrorFallsBackFul
 	lp.EXPECT().GenerateCardContent(gomock.Any(), "some phrase", (*[]string)(nil)).Return(&llm.GeneratedCardContent{
 		Paraphrase:    "ai-paraphrase",
 		Transcription: &aiTranscription,
-		Examples:      []string{"ai-example"},
+		Examples:      []llm.Example{{Sentence: "ai-example"}},
 		Synonyms:      []string{"ai-synonym"},
 	}, nil)
 
@@ -118,7 +118,7 @@ func TestWithDictionaryCardContent_GetCardContent_CambridgeHardErrorFallsBackFul
 	assert.Equal(t, "ai-paraphrase", got.Paraphrase)
 	assert.Equal(t, &aiTranscription, got.Transcription)
 	assert.Nil(t, got.Pronunciation)
-	assert.Equal(t, []string{"ai-example"}, got.Examples)
+	assert.Equal(t, []models.Example{{Sentence: "ai-example"}}, got.Examples)
 	assert.Equal(t, []string{"ai-synonym"}, got.Synonyms)
 }
 
@@ -150,7 +150,7 @@ func TestOnlyAICardContent_GetCardContent(t *testing.T) {
 	lp.EXPECT().GenerateCardContent(gomock.Any(), "subject", (*[]string)(nil)).Return(&llm.GeneratedCardContent{
 		Paraphrase:    "ai-paraphrase",
 		Transcription: &transcription,
-		Examples:      []string{"ai-example"},
+		Examples:      []llm.Example{{Sentence: "ai-example"}},
 		Synonyms:      []string{"ai-synonym"},
 	}, nil)
 
@@ -161,7 +161,7 @@ func TestOnlyAICardContent_GetCardContent(t *testing.T) {
 	assert.Equal(t, "ai-paraphrase", got.Paraphrase)
 	assert.Equal(t, &transcription, got.Transcription)
 	assert.Nil(t, got.Pronunciation) // comes from GetPronunciation (TTS), not here
-	assert.Equal(t, []string{"ai-example"}, got.Examples)
+	assert.Equal(t, []models.Example{{Sentence: "ai-example"}}, got.Examples)
 	assert.Equal(t, []string{"ai-synonym"}, got.Synonyms)
 }
 

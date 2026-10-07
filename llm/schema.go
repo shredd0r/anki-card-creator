@@ -19,9 +19,24 @@ var (
 					},
 					"examples": {
 						Type:        "array",
-						Description: "3 to 5 example sentences",
+						Description: "3 to 5 example sentences, each with the exact subject form used",
 						Items: &openai.ResponseFormatJSONSchemaProperty{
-							Type: "string",
+							Type: "object",
+							Properties: map[string]*openai.ResponseFormatJSONSchemaProperty{
+								"sentence": {
+									Type:        "string",
+									Description: "the example sentence, as plain text with no markup",
+								},
+								"subject_form": {
+									Type:        "string",
+									Description: "the exact word or phrase, copied verbatim from sentence, that is the subject or its inflected form",
+								},
+							},
+							Required: []string{
+								"sentence",
+								"subject_form",
+							},
+							AdditionalProperties: false,
 						},
 					},
 					"synonyms": {

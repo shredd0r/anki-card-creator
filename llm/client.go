@@ -17,11 +17,19 @@ var (
 	ErrNoOneMessageGenerated = errors.New("no one messsage generated")
 )
 
+// Example is one example sentence plus the exact subject form the model
+// used within it (e.g. subject "go" -> SubjectForm "went"), so callers can
+// highlight it without having to guess at English inflection themselves.
+type Example struct {
+	Sentence    string `json:"sentence"`
+	SubjectForm string `json:"subject_form"`
+}
+
 type GeneratedCardContent struct {
-	Paraphrase    string   `json:"paraphrase"`
-	Transcription *string  `json:"transcription"`
-	Examples      []string `json:"examples"`
-	Synonyms      []string `json:"synonyms"`
+	Paraphrase    string    `json:"paraphrase"`
+	Transcription *string   `json:"transcription"`
+	Examples      []Example `json:"examples"`
+	Synonyms      []string  `json:"synonyms"`
 }
 
 type RatedPictureContent struct {

@@ -25,7 +25,7 @@ func TestCreate_AssemblesFlashcardFromCardContent(t *testing.T) {
 	cc.EXPECT().GetCardContent(gomock.Any(), "word", usingContext).Return(&models.CardContent{
 		Paraphrase:    "word-explain",
 		Transcription: &transcription,
-		Examples:      []string{"word-example"},
+		Examples:      []models.Example{{Sentence: "word-example"}},
 		Synonyms:      []string{"synonym"},
 	}, nil)
 	cc.EXPECT().GetPicture(gomock.Any(), "word", usingContext).Return(picture, nil)
@@ -39,7 +39,7 @@ func TestCreate_AssemblesFlashcardFromCardContent(t *testing.T) {
 		Subject:       "word",
 		SubjectType:   models.SubjectTypeWord,
 		DeckName:      "test-deck",
-		Examples:      []string{"word-example"},
+		Examples:      []models.Example{{Sentence: "word-example"}},
 		Paraphrase:    "word-explain",
 		Transcription: &transcription,
 		Pronunciation: ttsPronunciation,

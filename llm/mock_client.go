@@ -33,10 +33,10 @@ func (c *implMockClient) GenerateCardContent(ctx context.Context, prompt string)
 	content := GeneratedCardContent{
 		Paraphrase:    fmt.Sprintf("A mock, generated explanation of what %q means.", subject),
 		Transcription: &transcription,
-		Examples: []string{
-			fmt.Sprintf("This is a mock example sentence using %q.", subject),
-			fmt.Sprintf("Here is another mock sentence with %q in it.", subject),
-			fmt.Sprintf("A third mock example that mentions %q.", subject),
+		Examples: []Example{
+			{Sentence: fmt.Sprintf("This is a mock example sentence using %s.", subject), SubjectForm: subject},
+			{Sentence: fmt.Sprintf("Here is another mock sentence with %s in it.", subject), SubjectForm: subject},
+			{Sentence: fmt.Sprintf("A third mock example that mentions %s.", subject), SubjectForm: subject},
 		},
 		Synonyms: []string{
 			fmt.Sprintf("%s-synonym-1", subject),

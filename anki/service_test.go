@@ -89,7 +89,7 @@ func TestAddFlashcard_AddsNewNoteWhenNoneFound(t *testing.T) {
 	flashcard := &models.Flashcard{
 		Subject:  "lime",
 		DeckName: "English",
-		Examples: []string{"The lime is sour."},
+		Examples: []models.Example{{Sentence: "The lime is sour."}},
 		Synonyms: []string{"citrus"},
 		Tags:     []string{"fruit"},
 	}
@@ -114,7 +114,7 @@ func TestAddFlashcard_AddsNewNoteWhenNoneFound(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "lime", addedFields["Subject"])
 	assert.Equal(t, "citrus", addedFields["Synonyms"])
-	assert.Contains(t, addedFields["Example"], "The lime is sour.")
+	assert.Equal(t, "<ul><li>The <b>lime</b> is sour.</li></ul>", addedFields["Example"])
 }
 
 func TestAddFlashcard_UpdatesExistingNote(t *testing.T) {
