@@ -101,7 +101,20 @@ func (p *implClient) chatCompletionRequest(ctx context.Context, model llms.Model
 		return nil, ErrNoOneMessageGenerated
 	}
 
-	outputText := []byte(resp.Choices[0].Content)
-	p.logger.Debug("raw llm response", slog.String("content", string(outputText)))
+	choice := resp.Choices[0]
+	p.logger.Debug("received content", slog.String("content", choice.Content), slog.String("reasoning-content", choice.ReasoningContent))
+
+	// Some locally-served "thinking"/reasoning models (via LM Studio and
+	// similar OpenAI-compatible servers) put the entire response - including
+	// the JSON we asked for - into message.reasoning_content and leave
+	// message.content empty, instead of splitting chain-of-thought from the
+	// final answer. Fall back to it rather than treating an empty Content as
+	// "no response".
+	content := choice.Content
+	if content == "" {
+		content = choice.ReasoningContent
+	}
+
+	outputText := []byte(content)
 	return &outputText, nil
 }
