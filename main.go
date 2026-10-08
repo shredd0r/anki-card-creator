@@ -61,7 +61,7 @@ func main() {
 	cc := card.NewFlashcardCreator(logger, cardContent)
 	te := extractor.NewTargetExtractor(logger)
 	s := service.NewAnkiCardCreator(*cfg, logger, as, cc)
-	targets, err := te.GetFromFile(ctx, "./word.json")
+	targets, err := te.GetFromFile(ctx, "./json-files/computer_science_it.json")
 	if err != nil {
 		logger.Error(err.Error())
 		return
