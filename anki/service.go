@@ -24,6 +24,8 @@ type Service interface {
 	// and adds or updates (by Subject match within the deck) the note in
 	// Anki via AnkiConnect.
 	AddFlashcard(ctx context.Context, flashcard *models.Flashcard) error
+	// ListDecks returns all deck names currently known to AnkiConnect.
+	ListDecks(ctx context.Context) ([]string, error)
 }
 
 type implService struct {
@@ -104,6 +106,17 @@ func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashc
 
 	s.logger.Debug("added flashcard to deck", slog.Any("deck", flashcard.DeckName), slog.Any("subject", flashcard.Subject))
 	return nil
+}
+
+func (s *implService) ListDecks(ctx context.Context) ([]string, error) {
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+
+	var names []string
+	if err := s.client.Invoke(ctx, "deckNames", nil, &names); err != nil {
+		return nil, fmt.Errorf("list decks: %w", err)
+	}
+	return names, nil
 }
 
 func (s *implService) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {

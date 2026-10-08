@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/tmc/langchaingo/llms"
 )
@@ -43,8 +44,9 @@ type Client interface {
 }
 
 type implClient struct {
-	seed   int
-	logger *slog.Logger
+	seed    int
+	timeout time.Duration
+	logger  *slog.Logger
 
 	cardContentLLM llms.Model
 	ratePictureLLM llms.Model
@@ -58,12 +60,16 @@ type implClient struct {
 // ratePictureLLM are expected to be constructed with their respective
 // ResponseFormat (see schema.go), healthCheckLLM with none.
 //
+// timeout bounds each individual request to the llm server (0 means no
+// timeout, i.e. bounded only by ctx).
+//
 // See NewOpenAIClient for the constructor that actually builds these models
 // against an OpenAI-compatible endpoint.
-func NewClient(logger *slog.Logger, seed int, cardContentLLM, ratePictureLLM, healthCheckLLM llms.Model) Client {
+func NewClient(logger *slog.Logger, seed int, timeout time.Duration, cardContentLLM, ratePictureLLM, healthCheckLLM llms.Model) Client {
 	return &implClient{
 		logger:         logger,
 		seed:           seed,
+		timeout:        timeout,
 		cardContentLLM: cardContentLLM,
 		ratePictureLLM: ratePictureLLM,
 		healthCheckLLM: healthCheckLLM,
@@ -97,7 +103,17 @@ func (p *implClient) HealthCheck(ctx context.Context) error {
 	return err
 }
 
+func (p *implClient) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if p.timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, p.timeout)
+}
+
 func (p *implClient) chatCompletionRequest(ctx context.Context, model llms.Model, messages []llms.MessageContent) (*[]byte, error) {
+	ctx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
 	resp, err := model.GenerateContent(ctx, messages, llms.WithSeed(p.seed))
 	if err != nil {
 		p.logger.Error("received error response from llm server", "err", err)

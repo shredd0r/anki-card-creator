@@ -82,6 +82,21 @@ func TestEnsureNoteType_ErrorsOnFieldMismatch(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestListDecks_ReturnsDeckNames(t *testing.T) {
+	s, client := newTestService(t)
+	ctx := context.Background()
+
+	client.EXPECT().Invoke(gomock.Any(), "deckNames", nil, gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ string, _ any, result any) error {
+			*(result.(*[]string)) = []string{"English", "Spanish"}
+			return nil
+		})
+
+	decks, err := s.ListDecks(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"English", "Spanish"}, decks)
+}
+
 func TestAddFlashcard_AddsNewNoteWhenNoneFound(t *testing.T) {
 	s, client := newTestService(t)
 	ctx := context.Background()

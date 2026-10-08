@@ -48,5 +48,5 @@ func NewOpenAIClient(logger *slog.Logger, cfg *config.LLMConfig) (Client, error)
 
 	logger.Debug("created langchaingo OpenAI-compatible client", slog.String("model", cfg.Model), slog.String("base-url", cfg.BaseUrl))
 
-	return NewClient(logger.WithGroup("openAI"), int(cfg.Seed), cardContentLLM, ratePictureLLM, healthCheckLLM), nil
+	return NewClient(logger.WithGroup("openAI"), int(cfg.Seed), cfg.Timeout, cardContentLLM, ratePictureLLM, healthCheckLLM), nil
 }
