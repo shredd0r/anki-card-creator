@@ -4,58 +4,84 @@ package anki
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"strings"
 
-	"github.com/npcnixel/genanki-go"
+	"github.com/shredd0r/anki-card-creator/config"
 	"github.com/shredd0r/anki-card-creator/models"
 )
 
 const (
-	model_id      = 10011001
-	model_name    = "card-generator-v.1.0.0"
+	model_name    = "card-generator"
 	template_name = "card-generator-template"
 	default_tag   = "anki-card-creator"
 )
 
 type Service interface {
-	AddFlashcard(ctx context.Context, flashcard *models.Flashcard)
-	SavePackage(ctx context.Context, pathToFile string) error
+	// AddFlashcard ensures the flashcard's deck exists, uploads any media,
+	// and adds or updates (by Subject match within the deck) the note in
+	// Anki via AnkiConnect.
+	AddFlashcard(ctx context.Context, flashcard *models.Flashcard) error
+	// ListDecks returns all deck names currently known to AnkiConnect.
+	ListDecks(ctx context.Context) ([]string, error)
 }
 
 type implService struct {
-	logger *slog.Logger
-	decks  map[string]*genanki.Deck
+	logger    *slog.Logger
+	client    Client
+	modelName string
+	cfg       config.AnkiConnectConfig
+	decks     map[string]struct{}
+	fields    fieldFormatter
 }
 
-func NewService(logger *slog.Logger) Service {
-	return &implService{
-		logger: logger.WithGroup("anki-service"),
-		decks:  map[string]*genanki.Deck{},
+// NewService connects to AnkiConnect and ensures the note type (fields,
+// templates and CSS from anki/const.go) exists and is up to date before
+// returning a ready-to-use Service.
+func NewService(ctx context.Context, logger *slog.Logger, cfg config.AnkiConnectConfig) (Service, error) {
+	s := &implService{
+		logger:    logger.WithGroup("anki-service"),
+		client:    NewClient(newAnkiConnectHTTPClient(), cfg),
+		modelName: model_name,
+		cfg:       cfg,
+		decks:     map[string]struct{}{},
 	}
+
+	if err := s.ensureNoteType(ctx); err != nil {
+		return nil, fmt.Errorf("ensure anki note type: %w", err)
+	}
+
+	return s, nil
 }
 
-// AddFlashcard - method for putting down flashcard in appropriate deck by deckname in flashcard
-func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashcard) {
-	s.logger.Debug("start adding flashcard to deck", slog.Any("deck", flashcard.DeckName), slog.Any("subject", flashcard.Subject))
+func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashcard) error {
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
 
-	deck, ok := s.decks[flashcard.DeckName]
-	if !ok {
-		deck = genanki.NewDeck(s.getIdForDeck(), flashcard.DeckName, "")
-		s.decks[flashcard.DeckName] = deck
+	s.logger.Info("adding flashcard to deck", slog.Any("deck", flashcard.DeckName), slog.Any("subject", flashcard.Subject))
+
+	if err := s.ensureDeck(ctx, flashcard.DeckName); err != nil {
+		return fmt.Errorf("ensure deck %q: %w", flashcard.DeckName, err)
 	}
 
-	pictureFilename := ""
+	pictureField := ""
 	if flashcard.Picture != nil {
-		pictureFilename = s.formatPictureField(flashcard.Picture.Filename)
-		deck.AddMedia(flashcard.Picture.Filename, flashcard.Picture.Content)
+		storedName, err := s.storeMedia(ctx, flashcard.Picture)
+		if err != nil {
+			return fmt.Errorf("store picture media: %w", err)
+		}
+		pictureField = s.fields.Picture(storedName)
 	}
 
-	pronunciationTag := ""
+	pronunciationField := ""
 	if flashcard.Pronunciation != nil {
-		pronunciationTag = flashcard.Pronunciation.Filename
-		deck.AddMedia(flashcard.Pronunciation.Filename, flashcard.Pronunciation.Content)
+		storedName, err := s.storeMedia(ctx, flashcard.Pronunciation)
+		if err != nil {
+			return fmt.Errorf("store pronunciation media: %w", err)
+		}
+		pronunciationField = storedName
 	}
 
 	transcription := ""
@@ -63,131 +89,126 @@ func (s *implService) AddFlashcard(ctx context.Context, flashcard *models.Flashc
 		transcription = *flashcard.Transcription
 	}
 
-	noteId := s.getIdForNote(deck)
-	deck.AddNote(&genanki.Note{
-		ID:      noteId,
-		ModelID: model_id,
-		Fields: []string{
-			flashcard.Subject,
-			pronunciationTag,
-			transcription,
-			flashcard.Paraphrase,
-			s.formatSynonymsField(flashcard),
-			pictureFilename,
-			s.formatExampleField(flashcard),
-		},
-		Tags: append(flashcard.Tags, default_tag),
-	})
+	fields := map[string]string{
+		"Subject":       flashcard.Subject,
+		"Pronunciation": pronunciationField,
+		"Transcription": transcription,
+		"Paraphrase":    flashcard.Paraphrase,
+		"Synonyms":      s.fields.Synonyms(flashcard.Synonyms),
+		"Picture":       pictureField,
+		"Example":       s.fields.Example(flashcard.Subject, flashcard.Examples),
+	}
+	tags := append(flashcard.Tags, default_tag)
 
-	s.logger.Debug("added new note to deck", slog.Any("deck", deck.Name), slog.Any("note id", noteId))
-}
-
-// SavePackage - create the package with all decks from service and save it to file
-func (s *implService) SavePackage(ctx context.Context, pathToFile string) error {
-	sliceDecks := []*genanki.Deck{}
-	for _, deck := range s.decks {
-		sliceDecks = append(sliceDecks, deck)
+	if err := s.upsertNote(ctx, flashcard.DeckName, flashcard.Subject, fields, tags); err != nil {
+		return fmt.Errorf("upsert note %q in deck %q: %w", flashcard.Subject, flashcard.DeckName, err)
 	}
 
-	pkg := genanki.NewPackage(sliceDecks).AddModel(&genanki.Model{
-		ID:        model_id,
-		Name:      model_name,
-		Fields:    s.getFieldsForModel(),
-		Templates: s.getTemplatesForModel(),
-		CSS:       css,
-	})
-
-	return pkg.WriteToFile(pathToFile)
-
+	s.logger.Debug("added flashcard to deck", slog.Any("deck", flashcard.DeckName), slog.Any("subject", flashcard.Subject))
+	return nil
 }
 
-func (s *implService) getIdForDeck() int64 {
-	return int64(len(s.decks) + 1)
-}
+func (s *implService) ListDecks(ctx context.Context) ([]string, error) {
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
 
-func (s *implService) getIdForNote(deck *genanki.Deck) int64 {
-	return int64(len(deck.Notes) + 1)
-}
-
-func (s *implService) getFieldsForModel() []genanki.Field {
-	return []genanki.Field{
-		{
-			Name: "Subject",
-			Ord:  0,
-			Font: "Helvetica",
-			Size: 30,
-		},
-		{
-			Name: "Pronunciation",
-			Ord:  1,
-		},
-		{
-			Name: "Transcription",
-			Ord:  2,
-			Font: "Helvetica",
-			Size: 20,
-		},
-		{
-			Name: "Paraphrase",
-			Ord:  3,
-			Font: "Helvetica",
-			Size: 20,
-		},
-		{
-			Name: "Synonyms",
-			Ord:  4,
-			Font: "Helvetica",
-			Size: 20,
-		},
-		{
-			Name: "Picture",
-			Ord:  5,
-		},
-		{
-			Name: "Example",
-			Ord:  6,
-			Font: "Helvetica",
-			Size: 18,
-		},
+	var names []string
+	if err := s.client.Invoke(ctx, "deckNames", nil, &names); err != nil {
+		return nil, fmt.Errorf("list decks: %w", err)
 	}
+	return names, nil
 }
 
-func (s *implService) getTemplatesForModel() []genanki.Template {
-	return []genanki.Template{
-		{
-			Name: template_name,
-			Ord:  0,
-			Qfmt: front_side_template,
-			Afmt: back_side_template,
-		},
+func (s *implService) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if s.cfg.Timeout <= 0 {
+		return ctx, func() {}
 	}
+	return context.WithTimeout(ctx, s.cfg.Timeout)
 }
 
-// Flashcard in anki expect example string like that:
-// <ul>
-//
-//	<li>The lime is sour.</li>
-//	<li>We have a lime tree.</li>
-//	<li>Cut the lime in half.</li>
-//
-// </ul>
-func (s *implService) formatExampleField(flashcard *models.Flashcard) string {
-	formatExamples := "<ul>%s</ul>"
-
-	examples := ""
-	for _, example := range flashcard.Examples {
-		examples += fmt.Sprintf("<li>%s</li>", example)
+func (s *implService) ensureDeck(ctx context.Context, deckName string) error {
+	if _, ok := s.decks[deckName]; ok {
+		return nil
 	}
 
-	s.logger.Debug("examples: ", slog.String("example", examples))
+	if err := s.client.Invoke(ctx, "createDeck", map[string]string{"deck": deckName}, nil); err != nil {
+		return err
+	}
 
-	return fmt.Sprintf(formatExamples, examples)
+	s.decks[deckName] = struct{}{}
+	return nil
 }
 
-func (s *implService) formatPictureField(filename string) string {
-	return fmt.Sprintf("<img src='%s'>", filename)
+func (s *implService) storeMedia(ctx context.Context, file *models.File) (string, error) {
+	var storedName string
+	err := s.client.Invoke(ctx, "storeMediaFile", map[string]string{
+		"filename": file.Filename,
+		"data":     base64.StdEncoding.EncodeToString(file.Content),
+	}, &storedName)
+	if err != nil {
+		return "", err
+	}
+	return storedName, nil
 }
 
-func (s *implService) formatSynonymsField(flashcard *models.Flashcard) string {
-	return strings.Join(flashcard.Synonyms, ", ")
+type addNoteParams struct {
+	Note addNoteSpec `json:"note"`
+}
+
+type addNoteSpec struct {
+	DeckName  string            `json:"deckName"`
+	ModelName string            `json:"modelName"`
+	Fields    map[string]string `json:"fields"`
+	Tags      []string          `json:"tags"`
+}
+
+type updateNoteFieldsParams struct {
+	Note updateNoteFieldsSpec `json:"note"`
+}
+
+type updateNoteFieldsSpec struct {
+	ID     int64             `json:"id"`
+	Fields map[string]string `json:"fields"`
+}
+
+type addTagsParams struct {
+	Notes []int64 `json:"notes"`
+	Tags  string  `json:"tags"`
+}
+
+func (s *implService) upsertNote(ctx context.Context, deckName string, subject string, fields map[string]string, tags []string) error {
+	query := fmt.Sprintf("deck:%q Subject:%q", deckName, subject)
+
+	var noteIds []int64
+	if err := s.client.Invoke(ctx, "findNotes", map[string]string{"query": query}, &noteIds); err != nil {
+		return fmt.Errorf("find existing note: %w", err)
+	}
+
+	if len(noteIds) > 0 {
+		if err := s.client.Invoke(ctx, "updateNoteFields", updateNoteFieldsParams{
+			Note: updateNoteFieldsSpec{ID: noteIds[0], Fields: fields},
+		}, nil); err != nil {
+			return fmt.Errorf("update note fields: %w", err)
+		}
+
+		if err := s.client.Invoke(ctx, "addTags", addTagsParams{
+			Notes: noteIds,
+			Tags:  strings.Join(tags, " "),
+		}, nil); err != nil {
+			return fmt.Errorf("update note tags: %w", err)
+		}
+		return nil
+	}
+
+	if err := s.client.Invoke(ctx, "addNote", addNoteParams{
+		Note: addNoteSpec{
+			DeckName:  deckName,
+			ModelName: s.modelName,
+			Fields:    fields,
+			Tags:      tags,
+		},
+	}, nil); err != nil {
+		return fmt.Errorf("add note: %w", err)
+	}
+	return nil
 }

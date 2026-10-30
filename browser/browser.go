@@ -1,6 +1,6 @@
 package browser
 
-import "github.com/playwright-community/playwright-go"
+import "github.com/mxschmitt/playwright-go"
 
 func LaunchFirefox(options ...playwright.BrowserTypeLaunchOptions) (playwright.Browser, error) {
 	pw, err := playwright.Run(

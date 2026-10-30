@@ -215,8 +215,7 @@ const (
 			P.innerHTML = P.innerHTML
 				.replace(/(\&nbsp\;)/g, "\ ")
 				.replace(/(\u00A0)/g, "<br>")
-				.replace(/(\.\<br\>)/g,"\. ")
-				.replace(/(\b{{text:Subject}}\w*?\b)/ig, "<b>$1</b>"); /* Auto Bold */
+				.replace(/(\.\<br\>)/g,"\. ");
 		}
 	</script>`
 

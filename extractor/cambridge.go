@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/playwright-community/playwright-go"
+	"github.com/mxschmitt/playwright-go"
 	"github.com/shredd0r/anki-card-creator/downloader"
 	"github.com/shredd0r/anki-card-creator/models"
 	"github.com/shredd0r/anki-card-creator/utils"
@@ -44,6 +44,7 @@ type Cambridge interface {
 	GetExplains(ctx context.Context, subject string) (*[]string, error)
 	GetTransacription(ctx context.Context, subject string) (*string, error)
 	GetCard(ctx context.Context, subject string) (*CambridgeCard, error)
+	GetPronunciation(ctx context.Context, subject string) (*models.File, error)
 }
 
 type implCambridge struct {
@@ -69,7 +70,7 @@ func (e *implCambridge) GetExplains(ctx context.Context, subject string) (*[]str
 		}
 	default:
 		{
-			e.logger.Debug(fmt.Sprintf("start get card for subject: %s", subject))
+			e.logger.Debug(fmt.Sprintf("get card for subject: %s", subject))
 
 			page, err := e.gotoSubjectPage(ctx, subject)
 			if err != nil {
@@ -91,7 +92,7 @@ func (e *implCambridge) GetTransacription(ctx context.Context, subject string) (
 		}
 	default:
 		{
-			e.logger.Debug(fmt.Sprintf("start get card for subject: %s", subject))
+			e.logger.Debug(fmt.Sprintf("get card for subject: %s", subject))
 
 			page, err := e.gotoSubjectPage(ctx, subject)
 			if err != nil {
@@ -105,7 +106,7 @@ func (e *implCambridge) GetTransacription(ctx context.Context, subject string) (
 }
 
 func (e *implCambridge) GetCard(ctx context.Context, subject string) (*CambridgeCard, error) {
-	e.logger.Debug(fmt.Sprintf("start get card for subject: %s", subject))
+	e.logger.Debug(fmt.Sprintf("get card for subject: %s", subject))
 
 	subjectType := utils.GetSubjectType(subject)
 	if subjectType != models.SubjectTypeWord {
@@ -129,36 +130,58 @@ func (e *implCambridge) GetCard(ctx context.Context, subject string) (*Cambridge
 		pronunciation, errPronunciation = e.getPronunciation(ctx, subject, mainPageLocator)
 	}()
 
-	transcription, err := e.getTransacription(ctx, mainPageLocator)
-	if err != nil {
-		e.logger.Error("failed get transcription from parent locator", slog.Any("err", err.Error()))
-		return nil, err
+	// A single volume (transcription/explains/examples/pronunciation) failing
+	// to scrape - e.g. the page just doesn't have that element - no longer
+	// aborts the whole card: it's left at its zero value and the caller
+	// (card/fetcher.withDictionaryCardContent) falls back to AI for that
+	// specific field. Only gotoSubjectPage's error (subject not found,
+	// unsupported subject type, navigation failure) is a hard error here.
+	var transcription *string
+	if t, err := e.getTransacription(ctx, mainPageLocator); err != nil {
+		e.logger.Warn("failed get transcription from cambridge, falling back", slog.Any("err", err.Error()))
+	} else {
+		transcription = t
 	}
 
-	explains, err := e.getExplains(ctx, mainPageLocator)
-	if err != nil {
-		e.logger.Error("failed get explains from parent locator", slog.Any("err", err.Error()))
-		return nil, err
+	var explains []string
+	if expl, err := e.getExplains(ctx, mainPageLocator); err != nil {
+		e.logger.Warn("failed get explains from cambridge, falling back", slog.Any("err", err.Error()))
+	} else {
+		explains = *expl
 	}
 
-	examples, err := e.getExamples(ctx, mainPageLocator)
-	if err != nil {
-		e.logger.Error("failed get examples from parent locator", slog.Any("err", err.Error()))
-		return nil, err
+	var examples []string
+	if ex, err := e.getExamples(ctx, mainPageLocator); err != nil {
+		e.logger.Warn("failed get examples from cambridge, falling back", slog.Any("err", err.Error()))
+	} else {
+		examples = *ex
 	}
 
 	wg.Wait()
 	if errPronunciation != nil {
-		return nil, err
+		e.logger.Warn("failed get pronunciation from cambridge, falling back", slog.Any("err", errPronunciation.Error()))
+		pronunciation = nil
 	}
 
 	return &CambridgeCard{
 		Subject:       subject,
 		Transcription: transcription,
 		Pronunciation: pronunciation,
-		Explains:      *explains,
-		Examples:      *examples,
+		Explains:      explains,
+		Examples:      examples,
 	}, nil
+}
+
+func (e *implCambridge) GetPronunciation(ctx context.Context, subject string) (*models.File, error) {
+	page, err := e.gotoSubjectPage(ctx, subject)
+	if err != nil {
+		return nil, err
+	}
+	defer page.Close()
+
+	mainPageLocator := page.Locator("html")
+
+	return e.getPronunciation(ctx, subject, mainPageLocator)
 }
 
 func (e *implCambridge) gotoSubjectPage(ctx context.Context, subject string) (playwright.Page, error) {
@@ -170,7 +193,7 @@ func (e *implCambridge) gotoSubjectPage(ctx context.Context, subject string) (pl
 		}
 	default:
 		{
-			e.logger.Debug(fmt.Sprintf("start go to dictionary page for subject: %s", subject))
+			e.logger.Debug(fmt.Sprintf("go to dictionary page for subject: %s", subject))
 			page, err := e.browser.NewPage()
 			if err != nil {
 				e.logger.Error("failed create new page for cambridge dictionary", slog.Any("err", err.Error()))
@@ -215,7 +238,7 @@ func (e *implCambridge) gotoSubjectPage(ctx context.Context, subject string) (pl
 }
 
 func (e *implCambridge) getTransacription(ctx context.Context, mainPageLocator playwright.Locator) (*string, error) {
-	e.logger.Debug("start get transcription from cambridge page")
+	e.logger.Debug("get transcription from cambridge page")
 	select {
 	case <-ctx.Done():
 		{
@@ -236,12 +259,12 @@ func (e *implCambridge) getTransacription(ctx context.Context, mainPageLocator p
 }
 
 func (e *implCambridge) getExplains(ctx context.Context, mainPageLocator playwright.Locator) (*[]string, error) {
-	e.logger.Debug("start get explains from cambridge page")
+	e.logger.Debug("get explains from cambridge page")
 	return e.getAllStringsBySelector(ctx, mainPageLocator, selector_for_explain_cambridge, 3)
 }
 
 func (e *implCambridge) getExamples(ctx context.Context, mainPageLocator playwright.Locator) (*[]string, error) {
-	e.logger.Debug("start get examples from cambridge page")
+	e.logger.Debug("get examples from cambridge page")
 	return e.getAllStringsBySelector(ctx, mainPageLocator, selector_for_example_cambridge, 5)
 }
 

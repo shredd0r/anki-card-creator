@@ -8,29 +8,36 @@ import (
 )
 
 type Config struct {
-	Debugging bool          `yaml:"debugging"`
-	QueueSize uint          `yaml:"queue-size"`
-	Output    string        `yaml:"output"`
-	Gemini    *GeminiConfig `yaml:"gemini"`
-	Ollama    *OllamaConfig `yaml:"ollama"`
-	Picture   PictureConfig `yaml:"picture"`
+	Debugging   bool              `yaml:"debugging"`
+	QueueSize   uint              `yaml:"queue-size"`
+	LLM         *LLMConfig        `yaml:"llm"`
+	Picture     PictureConfig     `yaml:"picture"`
+	AnkiConnect AnkiConnectConfig `yaml:"anki-connect"`
 }
 
 type GeminiConfig struct {
 	Token string `yaml:"token"`
 }
 
-type OllamaConfig struct {
-	Host    string        `yaml:"host"`
-	Port    uint16        `yaml:"port"`
-	Model   string        `yaml:"model"`
-	Timeout time.Duration `yaml:"timeout"`
+type LLMConfig struct {
+	OnlyAI  bool          `yaml:"only-ai"`  // true: skip Cambridge dictionary, generate everything via AI
+	Seed    int64         `yaml:"seed"`     // Seed for generating content
+	BaseUrl string        `yaml:"base-url"` // Url to server with launched model based on OpenAI APIes
+	Token   string        `yaml:"token"`    // Token for llm provider
+	Model   string        `yaml:"model"`    // Model name
+	Timeout time.Duration `yaml:"timeout"`  // Timeout for response from llm server
 }
 
 type PictureConfig struct {
-	IgnoreError   bool  `yaml:"ignore"`
 	CountSearches uint8 `yaml:"count-searches"`
 	MinimalRating uint8 `yaml:"min-rating"`
+	Ignore        bool  `yaml:"ignore"` // true: skip picture search/rating entirely
+}
+
+type AnkiConnectConfig struct {
+	BaseUrl string        `yaml:"base-url"` // AnkiConnect endpoint; defaults to http://127.0.0.1:8765 when empty
+	Token   string        `yaml:"token"`    // optional AnkiConnect API key
+	Timeout time.Duration `yaml:"timeout"`  // per-call budget for AnkiConnect requests
 }
 
 func Read(pathToFile string) (*Config, error) {
